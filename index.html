@@ -3,87 +3,51 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Controle de Despesas — Modo Teste</title>
+<title>Controle de Despesas — Grupo Supersafra</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 
-<script>
-  // ═══════════════════════════════════════════════════════════
-  // MODO TESTE — sem Firebase, sem autenticação
-  // Dados salvos em localStorage do navegador
-  // ═══════════════════════════════════════════════════════════
+<!-- Firebase SDK -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import {
+    getAuth,
+    signInWithEmailAndPassword,
+    signOut,
+    onAuthStateChanged
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+  import {
+    getFirestore,
+    collection,
+    doc,
+    getDoc,
+    addDoc,
+    updateDoc,
+    deleteDoc,
+    query,
+    where,
+    orderBy,
+    getDocs,
+    serverTimestamp
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-  // ── Usuário fixo para teste ──
-  const USUARIO_TESTE = {
-    uid: 'teste-uid-001',
-    email: 'consultor@teste.com',
-    nome: 'Consultor Teste',
-    sigla: 'CT',
-    perfil: 'consultor'   // troque para 'admin' para testar o painel admin
+  // ═══════════════════════════════════════════════════════════
+  // CONFIGURAÇÃO DO FIREBASE
+  // Substitua pelos dados do seu projeto no Console Firebase:
+  // Projeto → Configurações → Seus apps → SDK
+  // ═══════════════════════════════════════════════════════════
+  const firebaseConfig = {
+    apiKey: "AIzaSyAP96jmOcqIxrIhIxpQr_-eQJteSFARWiU",
+    authDomain: "embarques-semanais-345f5.firebaseapp.com",
+    projectId: "embarques-semanais-345f5",
+    storageBucket: "embarques-semanais-345f5.firebasestorage.app",
+    messagingSenderId: "1042529084199",
+    appId: "1:1042529084199:web:6085fc7e16907dff613f02"
   };
 
-  // ═══════════════════════════════
-  // BANCO LOCAL (localStorage)
-  // ═══════════════════════════════
-  function gerarId() {
-    return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-  }
-
-  const DB = {
-    // ── Semanas ──
-    getSemanas() {
-      return JSON.parse(localStorage.getItem('semanas') || '[]');
-    },
-    saveSemanas(lista) {
-      localStorage.setItem('semanas', JSON.stringify(lista));
-    },
-    addSemana(dados) {
-      const lista = this.getSemanas();
-      const nova = { id: gerarId(), criadoEm: new Date().toISOString(), ...dados };
-      lista.unshift(nova);
-      this.saveSemanas(lista);
-      return nova;
-    },
-    updateSemana(id, patch) {
-      const lista = this.getSemanas().map(s => s.id === id ? { ...s, ...patch } : s);
-      this.saveSemanas(lista);
-    },
-    getSemana(id) {
-      return this.getSemanas().find(s => s.id === id) || null;
-    },
-
-    // ── Despesas ──
-    getDespesas() {
-      return JSON.parse(localStorage.getItem('despesas') || '[]');
-    },
-    saveDespesas(lista) {
-      localStorage.setItem('despesas', JSON.stringify(lista));
-    },
-    addDespesa(dados) {
-      const lista = this.getDespesas();
-      const nova = { id: gerarId(), criadoEm: new Date().toISOString(), ...dados };
-      lista.push(nova);
-      this.saveDespesas(lista);
-      return nova;
-    },
-    deleteDespesa(id) {
-      const lista = this.getDespesas().filter(d => d.id !== id);
-      this.saveDespesas(lista);
-    },
-    getDespesasPorSemana(semanaId) {
-      return this.getDespesas().filter(d => d.semanaId === semanaId);
-    },
-
-    // ── Checklists ──
-    getChecklists() {
-      return JSON.parse(localStorage.getItem('checklists') || '[]');
-    },
-    saveChecklist(semanaId, dados) {
-      const lista = this.getChecklists().filter(c => c.semanaId !== semanaId);
-      lista.push({ semanaId, ...dados, criadoEm: new Date().toISOString() });
-      localStorage.setItem('checklists', JSON.stringify(lista));
-    }
-  };
+  const app  = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db   = getFirestore(app);
 
   // ═══════════════════════════════
   // ESTADO GLOBAL
@@ -96,7 +60,7 @@
   };
 
   // ═══════════════════════════════
-  // HELPERS
+  // HELPERS DE FORMATAÇÃO
   // ═══════════════════════════════
   function fmt(val) {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
@@ -104,6 +68,8 @@
   function fmtKm(val) {
     return new Intl.NumberFormat('pt-BR').format(val || 0) + ' km';
   }
+  window.fmt   = fmt;
+  window.fmtKm = fmtKm;
 
   // ═══════════════════════════════
   // NAVEGAÇÃO
@@ -116,23 +82,76 @@
   };
 
   // ═══════════════════════════════
-  // LOGIN (simulado)
+  // AUTENTICAÇÃO
   // ═══════════════════════════════
-  window.fazerLogin = function() {
-    window._appState.usuario = { ...USUARIO_TESTE };
-    iniciarApp();
+
+  // Monitora estado de login automaticamente
+  onAuthStateChanged(auth, async (firebaseUser) => {
+    if (firebaseUser) {
+      // Busca dados do usuário no Firestore
+      const snap = await getDoc(doc(db, 'usuarios', firebaseUser.uid));
+      if (snap.exists()) {
+        window._appState.usuario = { uid: firebaseUser.uid, ...snap.data() };
+        iniciarApp();
+      } else {
+        // Usuário autenticado mas sem cadastro no Firestore
+        showToast('Usuário não encontrado no sistema.');
+        await signOut(auth);
+        navTo('screen-login');
+      }
+    } else {
+      window._appState = { usuario: null, semanaAtual: null, semanas: [], despesas: [] };
+      navTo('screen-login');
+    }
+  });
+
+  window.fazerLogin = async function() {
+    const email = document.getElementById('login-email')?.value?.trim();
+    const senha = document.getElementById('login-senha')?.value;
+    const btn   = document.getElementById('btn-login');
+
+    if (!email || !senha) { showToast('Preencha e-mail e senha.'); return; }
+
+    btn.disabled = true;
+    btn.textContent = 'Entrando…';
+
+    try {
+      await signInWithEmailAndPassword(auth, email, senha);
+      // onAuthStateChanged cuida do resto
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = 'Entrar';
+      const msgs = {
+        'auth/user-not-found':  'E-mail não cadastrado.',
+        'auth/wrong-password':  'Senha incorreta.',
+        'auth/invalid-email':   'E-mail inválido.',
+        'auth/invalid-credential': 'E-mail ou senha incorretos.',
+        'auth/too-many-requests': 'Muitas tentativas. Tente mais tarde.'
+      };
+      showToast(msgs[err.code] || 'Erro ao entrar. Tente novamente.');
+    }
   };
 
-  window.fazerLogout = function() {
-    window._appState = { usuario: null, semanaAtual: null, semanas: [], despesas: [] };
-    navTo('screen-login');
+  window.fazerLogout = async function() {
+    await signOut(auth);
+    // onAuthStateChanged redireciona para login automaticamente
   };
+
+  // ─── Permite pressionar Enter no campo senha ───
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && document.getElementById('screen-login')?.classList.contains('active')) {
+      window.fazerLogin();
+    }
+  });
 
   // ═══════════════════════════════
   // INICIAR APP APÓS LOGIN
   // ═══════════════════════════════
   function iniciarApp() {
     const u = window._appState.usuario;
+    const btn = document.getElementById('btn-login');
+    if (btn) { btn.disabled = false; btn.textContent = 'Entrar'; }
+
     if (u.perfil === 'admin') {
       carregarPainelAdmin();
       navTo('screen-admin');
@@ -145,14 +164,32 @@
   // ═══════════════════════════════
   // HOME CONSULTOR
   // ═══════════════════════════════
-  function carregarHomeConsultor() {
+  async function carregarHomeConsultor() {
     const u = window._appState.usuario;
     document.getElementById('home-nome').textContent   = u.nome;
     document.getElementById('home-avatar').textContent = u.sigla;
 
-    const todasSemanas = DB.getSemanas();
-    // filtra por uid do usuário (no modo teste, uid fixo)
-    window._appState.semanas = todasSemanas.filter(s => s.uid === u.uid);
+    try {
+      const q = query(
+        collection(db, 'semanas'),
+        where('uid', '==', u.uid),
+        orderBy('criadoEm', 'desc')
+      );
+      const snap = await getDocs(q);
+      window._appState.semanas = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch (err) {
+      // Índice ainda não criado — busca sem ordenação
+      const q2 = query(collection(db, 'semanas'), where('uid', '==', u.uid));
+      const snap2 = await getDocs(q2);
+      window._appState.semanas = snap2.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => {
+          const ta = a.criadoEm?.seconds || 0;
+          const tb = b.criadoEm?.seconds || 0;
+          return tb - ta;
+        });
+    }
+
     renderizarSemanas();
     calcularMetricasMes();
   }
@@ -179,13 +216,15 @@
     const map = { 'Aprovado': 'badge-green', 'Enviado': 'badge-blue', 'Devolvido': 'badge-red', 'Rascunho': 'badge-amber' };
     return map[status] || 'badge-amber';
   }
+  window.badgeStatus = badgeStatus;
 
   function calcularMetricasMes() {
     const semanas = window._appState.semanas;
     const mes = new Date().getMonth();
     const semesMes = semanas.filter(s => {
       if (!s.criadoEm) return true;
-      return new Date(s.criadoEm).getMonth() === mes;
+      const d = s.criadoEm.seconds ? new Date(s.criadoEm.seconds * 1000) : new Date(s.criadoEm);
+      return d.getMonth() === mes;
     });
     const km    = semesMes.reduce((a, s) => a + (s.totalKm || 0), 0);
     const comb  = semesMes.reduce((a, s) => a + (s.totalCombustivel || 0), 0);
@@ -207,23 +246,23 @@
   // ═══════════════════════════════
   window.abrirSemana = function(id) {
     window._appState.semanaAtual = id;
-    const semana = DB.getSemana(id);
+    const semana = window._appState.semanas.find(s => s.id === id);
     if (semana) {
       preencherTelaSemana(semana);
       navTo('screen-semana');
     }
   };
 
-  window.irParaNovaSemana = function() {
+  window.irParaNovaSemana = async function() {
     const u = window._appState.usuario;
     const hoje = new Date();
     const diaSemana = hoje.getDay() === 0 ? 6 : hoje.getDay() - 1;
     const seg = new Date(hoje); seg.setDate(hoje.getDate() - diaSemana);
     const dom = new Date(seg);  dom.setDate(seg.getDate() + 6);
-    const fmt2 = d => d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit' });
+    const fmt2 = d => d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
     const titulo = `${fmt2(seg)} a ${fmt2(dom)}/${dom.getFullYear()}`;
 
-    const nova = DB.addSemana({
+    const dadosSemana = {
       uid: u.uid,
       nomeConsultor: u.nome,
       titulo,
@@ -232,12 +271,21 @@
       totalCombustivel: 0,
       totalGeral: 0,
       totalLitros: 0,
-      diasKm: []
-    });
+      diasKm: [],
+      criadoEm: serverTimestamp()
+    };
 
-    window._appState.semanaAtual = nova.id;
-    preencherTelaSemana(nova);
-    navTo('screen-semana');
+    try {
+      const ref = await addDoc(collection(db, 'semanas'), dadosSemana);
+      const novaSemana = { id: ref.id, ...dadosSemana, criadoEm: new Date() };
+      window._appState.semanas.unshift(novaSemana);
+      window._appState.semanaAtual = ref.id;
+      preencherTelaSemana(novaSemana);
+      navTo('screen-semana');
+    } catch (err) {
+      showToast('Erro ao criar semana. Verifique sua conexão.');
+      console.error(err);
+    }
   };
 
   function preencherTelaSemana(semana) {
@@ -252,8 +300,8 @@
       const ini  = document.getElementById(`ini-${i}`);
       const fin  = document.getElementById(`fin-${i}`);
       if (dest) dest.value = d.destino || '';
-      if (ini)  ini.value  = d.kmIni || '';
-      if (fin)  fin.value  = d.kmFin || '';
+      if (ini)  ini.value  = d.kmIni   || '';
+      if (fin)  fin.value  = d.kmFin   || '';
       const tot = document.getElementById('tot-' + i);
       if (tot) {
         const diff = (d.kmFin || 0) - (d.kmIni || 0);
@@ -291,7 +339,7 @@
     return total;
   };
 
-  window.salvarKm = function() {
+  window.salvarKm = async function() {
     const id = window._appState.semanaAtual;
     if (!id) return;
     const diasKm = [];
@@ -304,16 +352,37 @@
       diasKm.push({ destino: dest, kmIni: ini, kmFin: fin, km });
       totalKm += km;
     }
-    DB.updateSemana(id, { diasKm, totalKm });
-    showToast('KM salvo!');
-    document.getElementById('km-total').textContent = fmtKm(totalKm);
+    try {
+      await updateDoc(doc(db, 'semanas', id), { diasKm, totalKm });
+      // Atualiza cache local
+      const idx = window._appState.semanas.findIndex(s => s.id === id);
+      if (idx !== -1) Object.assign(window._appState.semanas[idx], { diasKm, totalKm });
+      showToast('KM salvo!');
+      document.getElementById('km-total').textContent = fmtKm(totalKm);
+    } catch (err) {
+      showToast('Erro ao salvar KM.');
+      console.error(err);
+    }
   };
 
   // ═══════════════════════════════
   // DESPESAS
   // ═══════════════════════════════
-  function carregarDespesasSemana(semanaId) {
-    window._appState.despesas = DB.getDespesasPorSemana(semanaId);
+  async function carregarDespesasSemana(semanaId) {
+    try {
+      const q = query(
+        collection(db, 'despesas'),
+        where('semanaId', '==', semanaId),
+        orderBy('criadoEm', 'asc')
+      );
+      const snap = await getDocs(q);
+      window._appState.despesas = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch (err) {
+      // Índice não criado ainda — busca sem ordenar
+      const q2 = query(collection(db, 'despesas'), where('semanaId', '==', semanaId));
+      const snap2 = await getDocs(q2);
+      window._appState.despesas = snap2.docs.map(d => ({ id: d.id, ...d.data() }));
+    }
     renderizarDespesas();
     recalcResumoSemana();
   }
@@ -359,7 +428,9 @@
     document.getElementById('res-total').textContent  = fmt(totalGeral);
 
     if (id) {
-      DB.updateSemana(id, { totalCombustivel, totalGeral, totalLitros });
+      updateDoc(doc(db, 'semanas', id), { totalCombustivel, totalGeral, totalLitros }).catch(console.error);
+      const idx = window._appState.semanas.findIndex(s => s.id === id);
+      if (idx !== -1) Object.assign(window._appState.semanas[idx], { totalCombustivel, totalGeral, totalLitros });
     }
   }
 
@@ -384,7 +455,7 @@
     }
   });
 
-  window.salvarDespesa = function() {
+  window.salvarDespesa = async function() {
     const id = window._appState.semanaAtual;
     if (!id) { showToast('Nenhuma semana aberta.'); return; }
     const tipoEl  = document.querySelector('.tipo-pill.selected');
@@ -397,57 +468,79 @@
 
     if (!valor) { showToast('Informe o valor da despesa.'); return; }
 
-    DB.addDespesa({
+    const dadosDespesa = {
       semanaId: id,
       uid: window._appState.usuario.uid,
-      tipo, valor, litros, obs, dia
-    });
-    showToast('Despesa salva!');
-    document.getElementById('desp-valor').value  = '';
-    document.getElementById('desp-litros').value = '';
-    if (document.getElementById('desp-odom'))  document.getElementById('desp-odom').value  = '';
-    if (document.getElementById('desp-obs'))   document.getElementById('desp-obs').value   = '';
-    carregarDespesasSemana(id);
-    setTimeout(() => navTo('screen-semana'), 500);
+      tipo, valor, litros, obs, dia,
+      criadoEm: serverTimestamp()
+    };
+
+    try {
+      const ref = await addDoc(collection(db, 'despesas'), dadosDespesa);
+      window._appState.despesas.push({ id: ref.id, ...dadosDespesa, criadoEm: new Date() });
+      showToast('Despesa salva!');
+      document.getElementById('desp-valor').value  = '';
+      document.getElementById('desp-litros').value = '';
+      if (document.getElementById('desp-odom'))  document.getElementById('desp-odom').value  = '';
+      if (document.getElementById('desp-obs'))   document.getElementById('desp-obs').value   = '';
+      renderizarDespesas();
+      recalcResumoSemana();
+      setTimeout(() => navTo('screen-semana'), 500);
+    } catch (err) {
+      showToast('Erro ao salvar despesa.');
+      console.error(err);
+    }
   };
 
-  window.excluirDespesa = function(despId) {
+  window.excluirDespesa = async function(despId) {
     if (!confirm('Excluir esta despesa?')) return;
-    DB.deleteDespesa(despId);
-    const id = window._appState.semanaAtual;
-    carregarDespesasSemana(id);
-    showToast('Despesa excluída.');
+    try {
+      await deleteDoc(doc(db, 'despesas', despId));
+      window._appState.despesas = window._appState.despesas.filter(d => d.id !== despId);
+      renderizarDespesas();
+      recalcResumoSemana();
+      showToast('Despesa excluída.');
+    } catch (err) {
+      showToast('Erro ao excluir despesa.');
+      console.error(err);
+    }
   };
 
   // ═══════════════════════════════
   // ENVIAR SEMANA
   // ═══════════════════════════════
-  window.enviarSemana = function() {
+  window.enviarSemana = async function() {
     const id = window._appState.semanaAtual;
     if (!id) return;
-    DB.updateSemana(id, { status: 'Enviado' });
-    document.getElementById('semana-badge').className = 'badge badge-blue';
-    document.getElementById('semana-badge').textContent = 'Enviado';
-    showToast('Semana enviada para aprovação!');
-    carregarHomeConsultor();
-    setTimeout(() => navTo('screen-home'), 800);
+    try {
+      await updateDoc(doc(db, 'semanas', id), { status: 'Enviado' });
+      document.getElementById('semana-badge').className = 'badge badge-blue';
+      document.getElementById('semana-badge').textContent = 'Enviado';
+      const idx = window._appState.semanas.findIndex(s => s.id === id);
+      if (idx !== -1) window._appState.semanas[idx].status = 'Enviado';
+      showToast('Semana enviada para aprovação!');
+      carregarHomeConsultor();
+      setTimeout(() => navTo('screen-home'), 800);
+    } catch (err) {
+      showToast('Erro ao enviar semana.');
+      console.error(err);
+    }
   };
 
   window.salvarRascunho = function() {
     salvarKm();
-    showToast('Rascunho salvo!');
   };
 
   // ═══════════════════════════════
   // CHECKLIST
   // ═══════════════════════════════
   window.toggleChk = function(btn, tipo) {
-    btn.parentElement.querySelectorAll('.check-btn').forEach(b => b.classList.remove('ok','nok'));
+    btn.parentElement.querySelectorAll('.check-btn').forEach(b => b.classList.remove('ok', 'nok'));
     btn.classList.add(tipo);
   };
 
-  window.enviarChecklist = function() {
-    const id = window._appState.semanaAtual;
+  window.enviarChecklist = async function() {
+    const id  = window._appState.semanaAtual;
     const obs = document.getElementById('chk-obs')?.value || '';
     const itens = [];
     document.querySelectorAll('.check-item').forEach(item => {
@@ -457,17 +550,23 @@
       itens.push({ label, status: ok ? 'ok' : nok ? 'atencao' : 'pendente' });
     });
     if (id) {
-      DB.updateSemana(id, { checklist: itens, checklistObs: obs });
-      DB.saveChecklist(id, { itens, obs });
+      try {
+        await updateDoc(doc(db, 'semanas', id), { checklist: itens, checklistObs: obs });
+        const idx = window._appState.semanas.findIndex(s => s.id === id);
+        if (idx !== -1) Object.assign(window._appState.semanas[idx], { checklist: itens, checklistObs: obs });
+        showToast('Checklist enviado!');
+      } catch (err) {
+        showToast('Erro ao salvar checklist.');
+        console.error(err);
+      }
     }
-    showToast('Checklist enviado!');
     setTimeout(() => navTo('screen-home'), 600);
   };
 
   // ═══════════════════════════════
   // PAINEL ADMIN
   // ═══════════════════════════════
-  function carregarPainelAdmin() {
+  async function carregarPainelAdmin() {
     const u = window._appState.usuario;
     document.getElementById('admin-nome').textContent  = u.nome;
     document.getElementById('admin-sigla').textContent = u.sigla;
@@ -475,69 +574,81 @@
     const mes = new Date().getMonth();
     const ano = new Date().getFullYear();
     const nomeMes = new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
-    document.getElementById('admin-label-mes').textContent = nomeMes.charAt(0).toUpperCase() + nomeMes.slice(1) + ' — todos os consultores';
+    document.getElementById('admin-label-mes').textContent =
+      nomeMes.charAt(0).toUpperCase() + nomeMes.slice(1) + ' — todos os consultores';
 
-    const todas = DB.getSemanas();
+    try {
+      const snap = await getDocs(collection(db, 'semanas'));
+      const todas = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-    const doMes = todas.filter(s => {
-      if (!s.criadoEm) return true;
-      const d = new Date(s.criadoEm);
-      return d.getMonth() === mes && d.getFullYear() === ano;
-    });
+      const doMes = todas.filter(s => {
+        if (!s.criadoEm) return true;
+        const d = s.criadoEm.seconds ? new Date(s.criadoEm.seconds * 1000) : new Date(s.criadoEm);
+        return d.getMonth() === mes && d.getFullYear() === ano;
+      });
 
-    const totalKm    = doMes.reduce((a, s) => a + (s.totalKm || 0), 0);
-    const totalGeral = doMes.reduce((a, s) => a + (s.totalGeral || 0), 0);
-    document.getElementById('admin-met-km').textContent    = new Intl.NumberFormat('pt-BR').format(totalKm);
-    document.getElementById('admin-met-total').textContent = fmt(totalGeral);
+      const totalKm    = doMes.reduce((a, s) => a + (s.totalKm    || 0), 0);
+      const totalGeral = doMes.reduce((a, s) => a + (s.totalGeral || 0), 0);
+      document.getElementById('admin-met-km').textContent    = new Intl.NumberFormat('pt-BR').format(totalKm);
+      document.getElementById('admin-met-total').textContent = fmt(totalGeral);
 
-    const porConsultor = {};
-    doMes.forEach(s => {
-      const n = s.nomeConsultor || s.uid;
-      if (!porConsultor[n]) porConsultor[n] = { km: 0, comb: 0, total: 0 };
-      porConsultor[n].km    += s.totalKm || 0;
-      porConsultor[n].comb  += s.totalCombustivel || 0;
-      porConsultor[n].total += s.totalGeral || 0;
-    });
+      const porConsultor = {};
+      doMes.forEach(s => {
+        const n = s.nomeConsultor || s.uid;
+        if (!porConsultor[n]) porConsultor[n] = { km: 0, comb: 0, total: 0 };
+        porConsultor[n].km    += s.totalKm    || 0;
+        porConsultor[n].comb  += s.totalCombustivel || 0;
+        porConsultor[n].total += s.totalGeral || 0;
+      });
 
-    const tabelaEl = document.getElementById('admin-tabela-consultores');
-    tabelaEl.innerHTML = Object.entries(porConsultor).map(([nome, v]) => `
-      <div class="consultant-row">
-        <span style="font-weight:500;">${nome}</span>
-        <span class="mono">${new Intl.NumberFormat('pt-BR').format(v.km)}</span>
-        <span class="mono">${fmt(v.comb)}</span>
-        <span class="mono">${fmt(v.total)}</span>
-      </div>
-    `).join('') || '<div class="consultant-row"><span style="color:var(--text-2);font-size:13px;">Nenhum dado ainda.</span></div>';
-
-    const aguardando = todas.filter(s => s.status === 'Enviado');
-    const aprovEl = document.getElementById('admin-aguardando');
-    aprovEl.innerHTML = aguardando.length ? aguardando.map(s => `
-      <div class="week-item">
-        <div>
-          <div class="week-title">${s.nomeConsultor || ''} · ${s.titulo || ''}</div>
-          <div class="week-sub">${fmtKm(s.totalKm)} · ${fmt(s.totalCombustivel)}</div>
+      const tabelaEl = document.getElementById('admin-tabela-consultores');
+      tabelaEl.innerHTML = Object.entries(porConsultor).map(([nome, v]) => `
+        <div class="consultant-row">
+          <span style="font-weight:500;">${nome}</span>
+          <span class="mono">${new Intl.NumberFormat('pt-BR').format(v.km)}</span>
+          <span class="mono">${fmt(v.comb)}</span>
+          <span class="mono">${fmt(v.total)}</span>
         </div>
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
-          <span class="badge badge-blue">Enviado</span>
-          <div style="display:flex;gap:4px;">
-            <button onclick="aprovarSemana('${s.id}')" style="font-size:11px;padding:2px 8px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);border-radius:6px;cursor:pointer;font-family:var(--font);font-weight:600;">Aprovar</button>
-            <button onclick="devolverSemana('${s.id}')" style="font-size:11px;padding:2px 8px;background:var(--red-bg);color:var(--red);border:1px solid var(--red-border);border-radius:6px;cursor:pointer;font-family:var(--font);font-weight:600;">Devolver</button>
+      `).join('') || '<div class="consultant-row"><span style="color:var(--text-2);font-size:13px;">Nenhum dado ainda.</span></div>';
+
+      const aguardando = todas.filter(s => s.status === 'Enviado');
+      const aprovEl = document.getElementById('admin-aguardando');
+      aprovEl.innerHTML = aguardando.length ? aguardando.map(s => `
+        <div class="week-item">
+          <div>
+            <div class="week-title">${s.nomeConsultor || ''} · ${s.titulo || ''}</div>
+            <div class="week-sub">${fmtKm(s.totalKm)} · ${fmt(s.totalCombustivel)}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+            <span class="badge badge-blue">Enviado</span>
+            <div style="display:flex;gap:4px;">
+              <button onclick="aprovarSemana('${s.id}')" style="font-size:11px;padding:2px 8px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);border-radius:6px;cursor:pointer;font-family:var(--font);font-weight:600;">Aprovar</button>
+              <button onclick="devolverSemana('${s.id}')" style="font-size:11px;padding:2px 8px;background:var(--red-bg);color:var(--red);border:1px solid var(--red-border);border-radius:6px;cursor:pointer;font-family:var(--font);font-weight:600;">Devolver</button>
+            </div>
           </div>
         </div>
-      </div>
-    `).join('') : '<p style="padding:14px 16px;font-size:13px;color:var(--text-2);">Nenhuma semana aguardando aprovação.</p>';
+      `).join('') : '<p style="padding:14px 16px;font-size:13px;color:var(--text-2);">Nenhuma semana aguardando aprovação.</p>';
+
+    } catch (err) {
+      showToast('Erro ao carregar painel admin.');
+      console.error(err);
+    }
   }
 
-  window.aprovarSemana = function(id) {
-    DB.updateSemana(id, { status: 'Aprovado' });
-    showToast('Semana aprovada!');
-    carregarPainelAdmin();
+  window.aprovarSemana = async function(id) {
+    try {
+      await updateDoc(doc(db, 'semanas', id), { status: 'Aprovado' });
+      showToast('Semana aprovada!');
+      carregarPainelAdmin();
+    } catch (err) { showToast('Erro ao aprovar.'); }
   };
 
-  window.devolverSemana = function(id) {
-    DB.updateSemana(id, { status: 'Devolvido' });
-    showToast('Semana devolvida.');
-    carregarPainelAdmin();
+  window.devolverSemana = async function(id) {
+    try {
+      await updateDoc(doc(db, 'semanas', id), { status: 'Devolvido' });
+      showToast('Semana devolvida.');
+      carregarPainelAdmin();
+    } catch (err) { showToast('Erro ao devolver.'); }
   };
 
   // ═══════════════════════════════
@@ -558,9 +669,9 @@
     const diaEl = document.getElementById('desp-dia');
     if (diaEl) {
       const id = window._appState.semanaAtual;
-      const s = id ? DB.getSemana(id) : null;
+      const s  = id ? window._appState.semanas.find(x => x.id === id) : null;
       if (s && s.diasKm && s.diasKm.length) {
-        diaEl.innerHTML = s.diasKm.map((d, i) => `<option>${d.destino ? d.destino : 'Dia ' + (i+1)}</option>`).join('');
+        diaEl.innerHTML = s.diasKm.map((d, i) => `<option>${d.destino ? d.destino : 'Dia ' + (i + 1)}</option>`).join('');
       } else {
         diaEl.innerHTML = `
           <option>Segunda-feira</option><option>Terça-feira</option>
@@ -811,11 +922,6 @@ p { line-height: 1.5; }
 .stat-row:last-child { border-bottom: none; }
 .stat-label { color: var(--text-2); }
 .stat-value { font-weight: 600; font-family: var(--mono); }
-.teste-banner {
-  background: var(--amber-bg); border-bottom: 1px solid var(--amber-border);
-  padding: 8px 16px; font-size: 12px; font-weight: 600; color: var(--amber);
-  text-align: center; letter-spacing: 0.02em;
-}
 @media (min-width: 431px) {
   body { align-items: center; min-height: 100vh; background: #E8E7E3; padding: 20px; }
   .app-shell { border-radius: 24px; max-height: 90vh; overflow: hidden; box-shadow: 0 4px 40px rgba(0,0,0,0.14); }
@@ -828,10 +934,9 @@ p { line-height: 1.5; }
 <div class="app-shell">
 
 <!-- ══════════════════════════════
-     TELA 1: LOGIN (simulado)
+     TELA 1: LOGIN
 ════════════════════════════════ -->
 <div id="screen-login" class="screen active">
-  <div class="teste-banner">🧪 MODO TESTE — dados salvos localmente no navegador</div>
   <div class="login-header">
     <div class="login-logo">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -842,13 +947,16 @@ p { line-height: 1.5; }
     <p style="font-size:14px; color:var(--text-2);">Grupo Supersafra</p>
   </div>
   <div class="scroll-content" style="padding-top:28px;">
-    <div style="background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:var(--radius);padding:14px 16px;margin-bottom:20px;">
-      <p style="font-size:13px;color:var(--blue);font-weight:600;margin-bottom:4px;">Entrando como:</p>
-      <p style="font-size:14px;color:var(--blue);">Consultor Teste · <code style="font-family:var(--mono);font-size:12px;">perfil: consultor</code></p>
-      <p style="font-size:11px;color:var(--blue);margin-top:6px;opacity:0.8;">Para testar o painel admin, mude <code style="font-family:var(--mono)">perfil: 'consultor'</code> para <code style="font-family:var(--mono)">perfil: 'admin'</code> no topo do &lt;script&gt;.</p>
+    <div class="field">
+      <label>E-mail</label>
+      <input type="email" id="login-email" placeholder="seu@email.com" autocomplete="email">
     </div>
-    <button id="btn-login" class="btn btn-primary btn-full" style="margin-top:8px;" onclick="fazerLogin()">Entrar no modo teste</button>
-    <p style="text-align:center; font-size:12px; color:var(--text-3); margin-top:16px;">Os dados ficam salvos no localStorage do navegador.</p>
+    <div class="field">
+      <label>Senha</label>
+      <input type="password" id="login-senha" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button id="btn-login" class="btn btn-primary btn-full" style="margin-top:8px;" onclick="fazerLogin()">Entrar</button>
+    <p style="text-align:center; font-size:12px; color:var(--text-3); margin-top:16px;">Acesso restrito a usuários cadastrados.</p>
   </div>
 </div>
 
@@ -856,7 +964,6 @@ p { line-height: 1.5; }
      TELA 2: HOME CONSULTOR
 ════════════════════════════════ -->
 <div id="screen-home" class="screen">
-  <div class="teste-banner">🧪 MODO TESTE</div>
   <div class="topbar">
     <div style="display:flex;align-items:center;gap:10px;">
       <div class="avatar" id="home-avatar">CT</div>
@@ -891,7 +998,7 @@ p { line-height: 1.5; }
     <div class="section-label">Semanas</div>
     <div class="card" style="margin-bottom:10px;">
       <div id="lista-semanas">
-        <p style="font-size:13px;color:var(--text-2);padding:12px 16px;">Nenhuma semana ainda.</p>
+        <p style="font-size:13px;color:var(--text-2);padding:12px 16px;">Carregando…</p>
       </div>
     </div>
     <button class="btn btn-primary btn-full" onclick="irParaNovaSemana()">+ Nova semana</button>
@@ -1258,7 +1365,6 @@ p { line-height: 1.5; }
      TELA 6: ADMIN — PAINEL GERAL
 ════════════════════════════════ -->
 <div id="screen-admin" class="screen">
-  <div class="teste-banner">🧪 MODO TESTE</div>
   <div class="topbar">
     <div style="display:flex;align-items:center;gap:10px;">
       <div class="avatar" style="background:var(--text);color:#fff;" id="admin-sigla">A</div>
@@ -1291,14 +1397,14 @@ p { line-height: 1.5; }
         <span>Total</span>
       </div>
       <div id="admin-tabela-consultores">
-        <div class="consultant-row"><span style="color:var(--text-2);font-size:13px;">Nenhum dado ainda.</span></div>
+        <div class="consultant-row"><span style="color:var(--text-2);font-size:13px;">Carregando…</span></div>
       </div>
     </div>
 
     <div class="section-label">Semanas aguardando aprovação</div>
     <div class="card">
       <div id="admin-aguardando">
-        <p style="padding:14px 16px;font-size:13px;color:var(--text-2);">Nenhuma semana aguardando aprovação.</p>
+        <p style="padding:14px 16px;font-size:13px;color:var(--text-2);">Carregando…</p>
       </div>
     </div>
   </div>
