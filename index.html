@@ -81,6 +81,19 @@
     window.scrollTo(0, 0);
   };
 
+console.log("Usuário autenticado:", firebaseUser.uid);
+
+try {
+  const ref = doc(db, 'usuarios', firebaseUser.uid);
+  console.log("Buscando doc:", ref.path);
+
+  const snap = await getDoc(ref);
+  console.log("Resultado:", snap.exists());
+
+} catch (err) {
+  console.error("ERRO REAL:", err);
+}
+  
   // ═══════════════════════════════
   // AUTENTICAÇÃO
   // ═══════════════════════════════
@@ -91,9 +104,19 @@
     try {
       const snap = await getDoc(doc(db, 'usuarios', firebaseUser.uid));
 
-      if (snap.exists()) {
-        window._appState.usuario = { uid: firebaseUser.uid, ...snap.data() };
-        iniciarApp();
+      if (!snap.exists()) {
+  console.log("Criando usuário automaticamente...");
+
+  await setDoc(doc(db, 'usuarios', firebaseUser.uid), {
+    nome: firebaseUser.email,
+    perfil: 'consultor',
+    sigla: firebaseUser.email.slice(0,2).toUpperCase()
+  });
+}
+
+const novoSnap = await getDoc(doc(db, 'usuarios', firebaseUser.uid));
+window._appState.usuario = { uid: firebaseUser.uid, ...novoSnap.data() };
+iniciarApp();
       } else {
         showToast('Usuário não encontrado.');
         await signOut(auth);
