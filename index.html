@@ -87,23 +87,27 @@
 
   // Monitora estado de login automaticamente
   onAuthStateChanged(auth, async (firebaseUser) => {
-    if (firebaseUser) {
-      // Busca dados do usuário no Firestore
+  if (firebaseUser) {
+    try {
       const snap = await getDoc(doc(db, 'usuarios', firebaseUser.uid));
+
       if (snap.exists()) {
         window._appState.usuario = { uid: firebaseUser.uid, ...snap.data() };
         iniciarApp();
       } else {
-        // Usuário autenticado mas sem cadastro no Firestore
-        showToast('Usuário não encontrado no sistema.');
+        showToast('Usuário não encontrado.');
         await signOut(auth);
-        navTo('screen-login');
       }
-    } else {
-      window._appState = { usuario: null, semanaAtual: null, semanas: [], despesas: [] };
-      navTo('screen-login');
+
+    } catch (err) {
+      console.error(err);
+      showToast('Erro de permissão no banco.');
+      await signOut(auth);
     }
-  });
+  } else {
+    navTo('screen-login');
+  }
+});
 
   window.fazerLogin = async function() {
     const email = document.getElementById('login-email')?.value?.trim();
