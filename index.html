@@ -407,7 +407,8 @@
         const q2 = query(collection(db, 'despesas'), where('semanaId', '==', semanaId));
         const snap2 = await getDocs(q2);
         window._appState.despesas = snap2.docs.map(d => ({ id: d.id, ...d.data() }));
-      } catch {
+      } catch (e2) {
+        console.error('[Despesas] Fallback também falhou:', e2);
         window._appState.despesas = [];
       }
     }
