@@ -3,46 +3,44 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Controle de Despesas — Grupo Supersafra</title>
+<title>Controle de Despesas</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 
-<!-- Firebase SDK -->
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import {
     getAuth,
     signInWithEmailAndPassword,
     signOut,
     onAuthStateChanged
-  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
   import {
     getFirestore,
     collection,
     doc,
     getDoc,
+    getDocs,
+    setDoc,
     addDoc,
     updateDoc,
     deleteDoc,
     query,
     where,
     orderBy,
-    getDocs,
     serverTimestamp
-  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
   // ═══════════════════════════════════════════════════════════
-  // CONFIGURAÇÃO DO FIREBASE
-  // Substitua pelos dados do seu projeto no Console Firebase:
-  // Projeto → Configurações → Seus apps → SDK
+  // CONFIGURAÇÃO FIREBASE
   // ═══════════════════════════════════════════════════════════
   const firebaseConfig = {
-    apiKey: "AIzaSyAP96jmOcqIxrIhIxpQr_-eQJteSFARWiU",
-    authDomain: "embarques-semanais-345f5.firebaseapp.com",
-    projectId: "embarques-semanais-345f5",
-    storageBucket: "embarques-semanais-345f5.firebasestorage.app",
-    messagingSenderId: "1042529084199",
-    appId: "1:1042529084199:web:6085fc7e16907dff613f02"
+    apiKey:            "AIzaSyAKxQZq0xXcd1I2WucyThg3W3bcARX18UM",
+    authDomain:        "despesas-consultores.firebaseapp.com",
+    projectId:         "despesas-consultores",
+    storageBucket:     "despesas-consultores.firebasestorage.app",
+    messagingSenderId: "226376691415",
+    appId:             "1:226376691415:web:0c4db470e05b075f388a92"
   };
 
   const app  = initializeApp(firebaseConfig);
@@ -60,7 +58,7 @@
   };
 
   // ═══════════════════════════════
-  // HELPERS DE FORMATAÇÃO
+  // HELPERS
   // ═══════════════════════════════
   function fmt(val) {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
@@ -68,8 +66,13 @@
   function fmtKm(val) {
     return new Intl.NumberFormat('pt-BR').format(val || 0) + ' km';
   }
-  window.fmt   = fmt;
-  window.fmtKm = fmtKm;
+
+  function setLoading(show, msg) {
+    const el = document.getElementById('loading-overlay');
+    if (!el) return;
+    el.style.display = show ? 'flex' : 'none';
+    if (msg) document.getElementById('loading-msg').textContent = msg;
+  }
 
   // ═══════════════════════════════
   // NAVEGAÇÃO
@@ -81,109 +84,111 @@
     window.scrollTo(0, 0);
   };
 
-console.log("Usuário autenticado:", firebaseUser.uid);
-
-try {
-  const ref = doc(db, 'usuarios', firebaseUser.uid);
-  console.log("Buscando doc:", ref.path);
-
-  const snap = await getDoc(ref);
-  console.log("Resultado:", snap.exists());
-
-} catch (err) {
-  console.error("ERRO REAL:", err);
-}
-  
   // ═══════════════════════════════
-  // AUTENTICAÇÃO
+  // LOGIN
   // ═══════════════════════════════
+  window.fazerLogin = async function() {
+    const email  = document.getElementById('login-email').value.trim().toLowerCase();
+    const senha  = document.getElementById('login-senha').value;
+    const btnEl  = document.getElementById('btn-login');
+    const errEl  = document.getElementById('login-erro');
 
-  // Monitora estado de login automaticamente
-  onAuthStateChanged(auth, async (firebaseUser) => {
-  if (firebaseUser) {
+    if (!email || !senha) {
+      errEl.textContent = 'Preencha e-mail e senha.';
+      errEl.style.display = 'block';
+      return;
+    }
+    errEl.style.display = 'none';
+    btnEl.textContent = 'Entrando…';
+    btnEl.disabled = true;
+
     try {
-      const snap = await getDoc(doc(db, 'usuarios', firebaseUser.uid));
+      const cred = await signInWithEmailAndPassword(auth, email, senha);
 
+      // Busca perfil no Firestore
+      const snap = await getDoc(doc(db, 'usuarios', cred.user.uid));
       if (!snap.exists()) {
-  console.log("Criando usuário automaticamente...");
-
-  await setDoc(doc(db, 'usuarios', firebaseUser.uid), {
-    nome: firebaseUser.email,
-    perfil: 'consultor',
-    sigla: firebaseUser.email.slice(0,2).toUpperCase()
-  });
-}
-
-const novoSnap = await getDoc(doc(db, 'usuarios', firebaseUser.uid));
-window._appState.usuario = { uid: firebaseUser.uid, ...novoSnap.data() };
-iniciarApp();
-      } else {
-        showToast('Usuário não encontrado.');
         await signOut(auth);
+        throw new Error('perfil-nao-encontrado');
       }
 
-    } catch (err) {
-      console.error(err);
-      showToast('Erro de permissão no banco.');
-      await signOut(auth);
-    }
-  } else {
-    navTo('screen-login');
-  }
-});
+      const perfil = snap.data();
+      window._appState.usuario = { uid: cred.user.uid, email, ...perfil };
+      await iniciarApp();
 
-  window.fazerLogin = async function() {
-    const email = document.getElementById('login-email')?.value?.trim();
-    const senha = document.getElementById('login-senha')?.value;
-    const btn   = document.getElementById('btn-login');
-
-    if (!email || !senha) { showToast('Preencha e-mail e senha.'); return; }
-
-    btn.disabled = true;
-    btn.textContent = 'Entrando…';
-
-    try {
-      await signInWithEmailAndPassword(auth, email, senha);
-      // onAuthStateChanged cuida do resto
-    } catch (err) {
-      btn.disabled = false;
-      btn.textContent = 'Entrar';
-      const msgs = {
-        'auth/user-not-found':  'E-mail não cadastrado.',
-        'auth/wrong-password':  'Senha incorreta.',
-        'auth/invalid-email':   'E-mail inválido.',
-        'auth/invalid-credential': 'E-mail ou senha incorretos.',
-        'auth/too-many-requests': 'Muitas tentativas. Tente mais tarde.'
-      };
-      showToast(msgs[err.code] || 'Erro ao entrar. Tente novamente.');
+    } catch (e) {
+      console.error('[Login]', e.code || e.message, e);
+      errEl.textContent = traduzirErroAuth(e.code || e.message);
+      errEl.style.display = 'block';
+    } finally {
+      btnEl.textContent = 'Entrar';
+      btnEl.disabled = false;
     }
   };
+
+  function traduzirErroAuth(code) {
+    const map = {
+      'auth/invalid-credential':      'E-mail ou senha incorretos.',
+      'auth/invalid-email':           'E-mail inválido.',
+      'auth/user-not-found':          'E-mail não cadastrado.',
+      'auth/wrong-password':          'Senha incorreta.',
+      'auth/too-many-requests':       'Muitas tentativas. Aguarde alguns minutos.',
+      'auth/network-request-failed':  'Sem conexão. Verifique sua internet.',
+      'auth/user-disabled':           'Esta conta foi desativada.',
+      'auth/api-key-not-valid':       '⚠️ API Key do Firebase inválida.',
+      'auth/configuration-not-found': '⚠️ Projeto Firebase não encontrado.',
+      'perfil-nao-encontrado':        'Perfil não encontrado. Contate o administrador.',
+    };
+    return map[code] || `Erro ao entrar (${code}). Veja o Console (F12) para detalhes.`;
+  }
 
   window.fazerLogout = async function() {
     await signOut(auth);
-    // onAuthStateChanged redireciona para login automaticamente
+    window._appState = { usuario: null, semanaAtual: null, semanas: [], despesas: [] };
+    navTo('screen-login');
   };
 
-  // ─── Permite pressionar Enter no campo senha ───
-  document.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' && document.getElementById('screen-login')?.classList.contains('active')) {
-      window.fazerLogin();
+  // ═══════════════════════════════
+  // AUTH STATE — persiste sessão
+  // ═══════════════════════════════
+  onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      setLoading(true, 'Carregando perfil…');
+      try {
+        const snap = await getDoc(doc(db, 'usuarios', user.uid));
+        if (snap.exists()) {
+          window._appState.usuario = { uid: user.uid, email: user.email, ...snap.data() };
+          await iniciarApp();
+        } else {
+          await signOut(auth);
+          navTo('screen-login');
+        }
+      } catch (e) {
+        console.error('[AuthState]', e);
+        navTo('screen-login');
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      setLoading(false);
+      navTo('screen-login');
     }
   });
 
   // ═══════════════════════════════
   // INICIAR APP APÓS LOGIN
   // ═══════════════════════════════
-  function iniciarApp() {
+  async function iniciarApp() {
     const u = window._appState.usuario;
-    const btn = document.getElementById('btn-login');
-    if (btn) { btn.disabled = false; btn.textContent = 'Entrar'; }
-
     if (u.perfil === 'admin') {
-      carregarPainelAdmin();
+      setLoading(true, 'Carregando painel…');
+      await carregarPainelAdmin();
+      setLoading(false);
       navTo('screen-admin');
     } else {
-      carregarHomeConsultor();
+      setLoading(true, 'Carregando dados…');
+      await carregarHomeConsultor();
+      setLoading(false);
       navTo('screen-home');
     }
   }
@@ -204,17 +209,19 @@ iniciarApp();
       );
       const snap = await getDocs(q);
       window._appState.semanas = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    } catch (err) {
-      // Índice ainda não criado — busca sem ordenação
-      const q2 = query(collection(db, 'semanas'), where('uid', '==', u.uid));
-      const snap2 = await getDocs(q2);
-      window._appState.semanas = snap2.docs
-        .map(d => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => {
-          const ta = a.criadoEm?.seconds || 0;
-          const tb = b.criadoEm?.seconds || 0;
-          return tb - ta;
-        });
+    } catch (e) {
+      console.error('[Home] Erro ao buscar semanas:', e);
+      // Se o índice ainda não foi criado, tenta sem orderBy
+      try {
+        const q2 = query(collection(db, 'semanas'), where('uid', '==', u.uid));
+        const snap2 = await getDocs(q2);
+        window._appState.semanas = snap2.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => (b.criadoEm?.seconds || 0) - (a.criadoEm?.seconds || 0));
+      } catch (e2) {
+        console.error('[Home] Fallback também falhou:', e2);
+        window._appState.semanas = [];
+      }
     }
 
     renderizarSemanas();
@@ -225,7 +232,7 @@ iniciarApp();
     const lista = window._appState.semanas;
     const container = document.getElementById('lista-semanas');
     if (!lista.length) {
-      container.innerHTML = '<p style="font-size:13px;color:var(--text-2);padding:12px 0 12px 16px;">Nenhuma semana registrada ainda.</p>';
+      container.innerHTML = '<p style="font-size:13px;color:var(--text-2);padding:14px 16px;">Nenhuma semana registrada ainda.</p>';
       return;
     }
     container.innerHTML = lista.map(s => `
@@ -243,14 +250,13 @@ iniciarApp();
     const map = { 'Aprovado': 'badge-green', 'Enviado': 'badge-blue', 'Devolvido': 'badge-red', 'Rascunho': 'badge-amber' };
     return map[status] || 'badge-amber';
   }
-  window.badgeStatus = badgeStatus;
 
   function calcularMetricasMes() {
     const semanas = window._appState.semanas;
     const mes = new Date().getMonth();
     const semesMes = semanas.filter(s => {
       if (!s.criadoEm) return true;
-      const d = s.criadoEm.seconds ? new Date(s.criadoEm.seconds * 1000) : new Date(s.criadoEm);
+      const d = s.criadoEm.toDate ? s.criadoEm.toDate() : new Date(s.criadoEm);
       return d.getMonth() === mes;
     });
     const km    = semesMes.reduce((a, s) => a + (s.totalKm || 0), 0);
@@ -271,12 +277,15 @@ iniciarApp();
   // ═══════════════════════════════
   // SEMANA — ABRIR / CRIAR
   // ═══════════════════════════════
-  window.abrirSemana = function(id) {
+  window.abrirSemana = async function(id) {
     window._appState.semanaAtual = id;
-    const semana = window._appState.semanas.find(s => s.id === id);
-    if (semana) {
-      preencherTelaSemana(semana);
+    setLoading(true, 'Carregando semana…');
+    try {
+      const snap = await getDoc(doc(db, 'semanas', id));
+      preencherTelaSemana({ id, ...snap.data() });
       navTo('screen-semana');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -286,32 +295,28 @@ iniciarApp();
     const diaSemana = hoje.getDay() === 0 ? 6 : hoje.getDay() - 1;
     const seg = new Date(hoje); seg.setDate(hoje.getDate() - diaSemana);
     const dom = new Date(seg);  dom.setDate(seg.getDate() + 6);
-    const fmt2 = d => d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+    const fmt2 = d => d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit' });
     const titulo = `${fmt2(seg)} a ${fmt2(dom)}/${dom.getFullYear()}`;
 
-    const dadosSemana = {
-      uid: u.uid,
-      nomeConsultor: u.nome,
-      titulo,
-      status: 'Rascunho',
-      totalKm: 0,
-      totalCombustivel: 0,
-      totalGeral: 0,
-      totalLitros: 0,
-      diasKm: [],
-      criadoEm: serverTimestamp()
-    };
-
+    setLoading(true, 'Criando semana…');
     try {
-      const ref = await addDoc(collection(db, 'semanas'), dadosSemana);
-      const novaSemana = { id: ref.id, ...dadosSemana, criadoEm: new Date() };
-      window._appState.semanas.unshift(novaSemana);
+      const ref = await addDoc(collection(db, 'semanas'), {
+        uid: u.uid,
+        nomeConsultor: u.nome,
+        titulo,
+        status: 'Rascunho',
+        totalKm: 0,
+        totalCombustivel: 0,
+        totalGeral: 0,
+        totalLitros: 0,
+        diasKm: [],
+        criadoEm: serverTimestamp()
+      });
       window._appState.semanaAtual = ref.id;
-      preencherTelaSemana(novaSemana);
+      preencherTelaSemana({ id: ref.id, titulo, status: 'Rascunho', diasKm: [] });
       navTo('screen-semana');
-    } catch (err) {
-      showToast('Erro ao criar semana. Verifique sua conexão.');
-      console.error(err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -327,8 +332,8 @@ iniciarApp();
       const ini  = document.getElementById(`ini-${i}`);
       const fin  = document.getElementById(`fin-${i}`);
       if (dest) dest.value = d.destino || '';
-      if (ini)  ini.value  = d.kmIni   || '';
-      if (fin)  fin.value  = d.kmFin   || '';
+      if (ini)  ini.value  = d.kmIni || '';
+      if (fin)  fin.value  = d.kmFin || '';
       const tot = document.getElementById('tot-' + i);
       if (tot) {
         const diff = (d.kmFin || 0) - (d.kmIni || 0);
@@ -379,17 +384,9 @@ iniciarApp();
       diasKm.push({ destino: dest, kmIni: ini, kmFin: fin, km });
       totalKm += km;
     }
-    try {
-      await updateDoc(doc(db, 'semanas', id), { diasKm, totalKm });
-      // Atualiza cache local
-      const idx = window._appState.semanas.findIndex(s => s.id === id);
-      if (idx !== -1) Object.assign(window._appState.semanas[idx], { diasKm, totalKm });
-      showToast('KM salvo!');
-      document.getElementById('km-total').textContent = fmtKm(totalKm);
-    } catch (err) {
-      showToast('Erro ao salvar KM.');
-      console.error(err);
-    }
+    await updateDoc(doc(db, 'semanas', id), { diasKm, totalKm });
+    showToast('KM salvo!');
+    document.getElementById('km-total').textContent = fmtKm(totalKm);
   };
 
   // ═══════════════════════════════
@@ -404,11 +401,15 @@ iniciarApp();
       );
       const snap = await getDocs(q);
       window._appState.despesas = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    } catch (err) {
-      // Índice não criado ainda — busca sem ordenar
-      const q2 = query(collection(db, 'despesas'), where('semanaId', '==', semanaId));
-      const snap2 = await getDocs(q2);
-      window._appState.despesas = snap2.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch (e) {
+      console.warn('[Despesas] Tentando sem orderBy:', e.message);
+      try {
+        const q2 = query(collection(db, 'despesas'), where('semanaId', '==', semanaId));
+        const snap2 = await getDocs(q2);
+        window._appState.despesas = snap2.docs.map(d => ({ id: d.id, ...d.data() }));
+      } catch {
+        window._appState.despesas = [];
+      }
     }
     renderizarDespesas();
     recalcResumoSemana();
@@ -435,7 +436,7 @@ iniciarApp();
     }
   }
 
-  function recalcResumoSemana() {
+  async function recalcResumoSemana() {
     const despesas = window._appState.despesas;
     const id = window._appState.semanaAtual;
     let totalCombustivel = 0, totalOutras = 0, totalLitros = 0;
@@ -455,9 +456,7 @@ iniciarApp();
     document.getElementById('res-total').textContent  = fmt(totalGeral);
 
     if (id) {
-      updateDoc(doc(db, 'semanas', id), { totalCombustivel, totalGeral, totalLitros }).catch(console.error);
-      const idx = window._appState.semanas.findIndex(s => s.id === id);
-      if (idx !== -1) Object.assign(window._appState.semanas[idx], { totalCombustivel, totalGeral, totalLitros });
+      await updateDoc(doc(db, 'semanas', id), { totalCombustivel, totalGeral, totalLitros });
     }
   }
 
@@ -469,7 +468,7 @@ iniciarApp();
     document.getElementById('media-preview').style.display = 'none';
   };
 
-  document.addEventListener('input', function(e) {
+  document.addEventListener('input', function() {
     const litrosEl = document.getElementById('desp-litros');
     const mediaEl  = document.getElementById('media-preview');
     const mediaVal = document.getElementById('media-valor');
@@ -478,59 +477,51 @@ iniciarApp();
     const km = recalcTotalKm();
     if (litros > 0 && km > 0) {
       if (mediaEl) mediaEl.style.display = 'block';
-      if (mediaVal) mediaVal.textContent  = (km / litros).toFixed(1) + ' km/l';
+      if (mediaVal) mediaVal.textContent = (km / litros).toFixed(1) + ' km/l';
     }
   });
 
   window.salvarDespesa = async function() {
     const id = window._appState.semanaAtual;
     if (!id) { showToast('Nenhuma semana aberta.'); return; }
-    const tipoEl  = document.querySelector('.tipo-pill.selected');
-    const tipo    = tipoEl ? tipoEl.textContent : 'Outras';
-    const valor   = parseFloat(document.getElementById('desp-valor')?.value) || 0;
-    const litros  = parseFloat(document.getElementById('desp-litros')?.value) || 0;
-    const obs     = document.getElementById('desp-obs')?.value || '';
-    const diaEl   = document.getElementById('desp-dia');
-    const dia     = diaEl ? diaEl.options[diaEl.selectedIndex]?.text : '';
+    const tipoEl = document.querySelector('.tipo-pill.selected');
+    const tipo   = tipoEl ? tipoEl.textContent : 'Outras';
+    const valor  = parseFloat(document.getElementById('desp-valor')?.value) || 0;
+    const litros = parseFloat(document.getElementById('desp-litros')?.value) || 0;
+    const obs    = document.getElementById('desp-obs')?.value || '';
+    const diaEl  = document.getElementById('desp-dia');
+    const dia    = diaEl ? diaEl.options[diaEl.selectedIndex]?.text : '';
 
     if (!valor) { showToast('Informe o valor da despesa.'); return; }
 
-    const dadosDespesa = {
-      semanaId: id,
-      uid: window._appState.usuario.uid,
-      tipo, valor, litros, obs, dia,
-      criadoEm: serverTimestamp()
-    };
+    const btnSalvar = document.querySelector('#screen-despesa .btn-success');
+    if (btnSalvar) { btnSalvar.disabled = true; btnSalvar.textContent = 'Salvando…'; }
 
     try {
-      const ref = await addDoc(collection(db, 'despesas'), dadosDespesa);
-      window._appState.despesas.push({ id: ref.id, ...dadosDespesa, criadoEm: new Date() });
+      await addDoc(collection(db, 'despesas'), {
+        semanaId: id,
+        uid: window._appState.usuario.uid,
+        tipo, valor, litros, obs, dia,
+        criadoEm: serverTimestamp()
+      });
       showToast('Despesa salva!');
       document.getElementById('desp-valor').value  = '';
       document.getElementById('desp-litros').value = '';
       if (document.getElementById('desp-odom'))  document.getElementById('desp-odom').value  = '';
       if (document.getElementById('desp-obs'))   document.getElementById('desp-obs').value   = '';
-      renderizarDespesas();
-      recalcResumoSemana();
+      await carregarDespesasSemana(id);
       setTimeout(() => navTo('screen-semana'), 500);
-    } catch (err) {
-      showToast('Erro ao salvar despesa.');
-      console.error(err);
+    } finally {
+      if (btnSalvar) { btnSalvar.disabled = false; btnSalvar.textContent = 'Salvar despesa'; }
     }
   };
 
   window.excluirDespesa = async function(despId) {
     if (!confirm('Excluir esta despesa?')) return;
-    try {
-      await deleteDoc(doc(db, 'despesas', despId));
-      window._appState.despesas = window._appState.despesas.filter(d => d.id !== despId);
-      renderizarDespesas();
-      recalcResumoSemana();
-      showToast('Despesa excluída.');
-    } catch (err) {
-      showToast('Erro ao excluir despesa.');
-      console.error(err);
-    }
+    await deleteDoc(doc(db, 'despesas', despId));
+    const id = window._appState.semanaAtual;
+    await carregarDespesasSemana(id);
+    showToast('Despesa excluída.');
   };
 
   // ═══════════════════════════════
@@ -539,30 +530,24 @@ iniciarApp();
   window.enviarSemana = async function() {
     const id = window._appState.semanaAtual;
     if (!id) return;
-    try {
-      await updateDoc(doc(db, 'semanas', id), { status: 'Enviado' });
-      document.getElementById('semana-badge').className = 'badge badge-blue';
-      document.getElementById('semana-badge').textContent = 'Enviado';
-      const idx = window._appState.semanas.findIndex(s => s.id === id);
-      if (idx !== -1) window._appState.semanas[idx].status = 'Enviado';
-      showToast('Semana enviada para aprovação!');
-      carregarHomeConsultor();
-      setTimeout(() => navTo('screen-home'), 800);
-    } catch (err) {
-      showToast('Erro ao enviar semana.');
-      console.error(err);
-    }
+    await updateDoc(doc(db, 'semanas', id), { status: 'Enviado' });
+    document.getElementById('semana-badge').className = 'badge badge-blue';
+    document.getElementById('semana-badge').textContent = 'Enviado';
+    showToast('Semana enviada para aprovação!');
+    await carregarHomeConsultor();
+    setTimeout(() => navTo('screen-home'), 800);
   };
 
-  window.salvarRascunho = function() {
-    salvarKm();
+  window.salvarRascunho = async function() {
+    await salvarKm();
+    showToast('Rascunho salvo!');
   };
 
   // ═══════════════════════════════
   // CHECKLIST
   // ═══════════════════════════════
   window.toggleChk = function(btn, tipo) {
-    btn.parentElement.querySelectorAll('.check-btn').forEach(b => b.classList.remove('ok', 'nok'));
+    btn.parentElement.querySelectorAll('.check-btn').forEach(b => b.classList.remove('ok','nok'));
     btn.classList.add(tipo);
   };
 
@@ -577,16 +562,9 @@ iniciarApp();
       itens.push({ label, status: ok ? 'ok' : nok ? 'atencao' : 'pendente' });
     });
     if (id) {
-      try {
-        await updateDoc(doc(db, 'semanas', id), { checklist: itens, checklistObs: obs });
-        const idx = window._appState.semanas.findIndex(s => s.id === id);
-        if (idx !== -1) Object.assign(window._appState.semanas[idx], { checklist: itens, checklistObs: obs });
-        showToast('Checklist enviado!');
-      } catch (err) {
-        showToast('Erro ao salvar checklist.');
-        console.error(err);
-      }
+      await updateDoc(doc(db, 'semanas', id), { checklist: itens, checklistObs: obs });
     }
+    showToast('Checklist enviado!');
     setTimeout(() => navTo('screen-home'), 600);
   };
 
@@ -601,81 +579,71 @@ iniciarApp();
     const mes = new Date().getMonth();
     const ano = new Date().getFullYear();
     const nomeMes = new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
-    document.getElementById('admin-label-mes').textContent =
-      nomeMes.charAt(0).toUpperCase() + nomeMes.slice(1) + ' — todos os consultores';
+    document.getElementById('admin-label-mes').textContent = nomeMes.charAt(0).toUpperCase() + nomeMes.slice(1) + ' — todos os consultores';
 
-    try {
-      const snap = await getDocs(collection(db, 'semanas'));
-      const todas = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const q = query(collection(db, 'semanas'), orderBy('criadoEm', 'desc'));
+    const snap = await getDocs(q);
+    const todas = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-      const doMes = todas.filter(s => {
-        if (!s.criadoEm) return true;
-        const d = s.criadoEm.seconds ? new Date(s.criadoEm.seconds * 1000) : new Date(s.criadoEm);
-        return d.getMonth() === mes && d.getFullYear() === ano;
-      });
+    const doMes = todas.filter(s => {
+      if (!s.criadoEm) return true;
+      const d = s.criadoEm.toDate ? s.criadoEm.toDate() : new Date(s.criadoEm);
+      return d.getMonth() === mes && d.getFullYear() === ano;
+    });
 
-      const totalKm    = doMes.reduce((a, s) => a + (s.totalKm    || 0), 0);
-      const totalGeral = doMes.reduce((a, s) => a + (s.totalGeral || 0), 0);
-      document.getElementById('admin-met-km').textContent    = new Intl.NumberFormat('pt-BR').format(totalKm);
-      document.getElementById('admin-met-total').textContent = fmt(totalGeral);
+    const totalKm    = doMes.reduce((a, s) => a + (s.totalKm || 0), 0);
+    const totalGeral = doMes.reduce((a, s) => a + (s.totalGeral || 0), 0);
+    document.getElementById('admin-met-km').textContent    = new Intl.NumberFormat('pt-BR').format(totalKm);
+    document.getElementById('admin-met-total').textContent = fmt(totalGeral);
 
-      const porConsultor = {};
-      doMes.forEach(s => {
-        const n = s.nomeConsultor || s.uid;
-        if (!porConsultor[n]) porConsultor[n] = { km: 0, comb: 0, total: 0 };
-        porConsultor[n].km    += s.totalKm    || 0;
-        porConsultor[n].comb  += s.totalCombustivel || 0;
-        porConsultor[n].total += s.totalGeral || 0;
-      });
+    const porConsultor = {};
+    doMes.forEach(s => {
+      const n = s.nomeConsultor || s.uid;
+      if (!porConsultor[n]) porConsultor[n] = { km: 0, comb: 0, total: 0 };
+      porConsultor[n].km    += s.totalKm || 0;
+      porConsultor[n].comb  += s.totalCombustivel || 0;
+      porConsultor[n].total += s.totalGeral || 0;
+    });
 
-      const tabelaEl = document.getElementById('admin-tabela-consultores');
-      tabelaEl.innerHTML = Object.entries(porConsultor).map(([nome, v]) => `
-        <div class="consultant-row">
-          <span style="font-weight:500;">${nome}</span>
-          <span class="mono">${new Intl.NumberFormat('pt-BR').format(v.km)}</span>
-          <span class="mono">${fmt(v.comb)}</span>
-          <span class="mono">${fmt(v.total)}</span>
+    const tabelaEl = document.getElementById('admin-tabela-consultores');
+    tabelaEl.innerHTML = Object.entries(porConsultor).map(([nome, v]) => `
+      <div class="consultant-row">
+        <span style="font-weight:500;">${nome}</span>
+        <span class="mono">${new Intl.NumberFormat('pt-BR').format(v.km)}</span>
+        <span class="mono">${fmt(v.comb)}</span>
+        <span class="mono">${fmt(v.total)}</span>
+      </div>
+    `).join('') || '<div class="consultant-row"><span style="color:var(--text-2);font-size:13px;">Nenhum dado ainda.</span></div>';
+
+    const aguardando = todas.filter(s => s.status === 'Enviado');
+    const aprovEl = document.getElementById('admin-aguardando');
+    aprovEl.innerHTML = aguardando.length ? aguardando.map(s => `
+      <div class="week-item">
+        <div>
+          <div class="week-title">${s.nomeConsultor || ''} · ${s.titulo || ''}</div>
+          <div class="week-sub">${fmtKm(s.totalKm)} · ${fmt(s.totalCombustivel)}</div>
         </div>
-      `).join('') || '<div class="consultant-row"><span style="color:var(--text-2);font-size:13px;">Nenhum dado ainda.</span></div>';
-
-      const aguardando = todas.filter(s => s.status === 'Enviado');
-      const aprovEl = document.getElementById('admin-aguardando');
-      aprovEl.innerHTML = aguardando.length ? aguardando.map(s => `
-        <div class="week-item">
-          <div>
-            <div class="week-title">${s.nomeConsultor || ''} · ${s.titulo || ''}</div>
-            <div class="week-sub">${fmtKm(s.totalKm)} · ${fmt(s.totalCombustivel)}</div>
-          </div>
-          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
-            <span class="badge badge-blue">Enviado</span>
-            <div style="display:flex;gap:4px;">
-              <button onclick="aprovarSemana('${s.id}')" style="font-size:11px;padding:2px 8px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);border-radius:6px;cursor:pointer;font-family:var(--font);font-weight:600;">Aprovar</button>
-              <button onclick="devolverSemana('${s.id}')" style="font-size:11px;padding:2px 8px;background:var(--red-bg);color:var(--red);border:1px solid var(--red-border);border-radius:6px;cursor:pointer;font-family:var(--font);font-weight:600;">Devolver</button>
-            </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+          <span class="badge badge-blue">Enviado</span>
+          <div style="display:flex;gap:4px;">
+            <button onclick="aprovarSemana('${s.id}')" style="font-size:11px;padding:2px 8px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);border-radius:6px;cursor:pointer;font-family:var(--font);font-weight:600;">Aprovar</button>
+            <button onclick="devolverSemana('${s.id}')" style="font-size:11px;padding:2px 8px;background:var(--red-bg);color:var(--red);border:1px solid var(--red-border);border-radius:6px;cursor:pointer;font-family:var(--font);font-weight:600;">Devolver</button>
           </div>
         </div>
-      `).join('') : '<p style="padding:14px 16px;font-size:13px;color:var(--text-2);">Nenhuma semana aguardando aprovação.</p>';
-
-    } catch (err) {
-      showToast('Erro ao carregar painel admin.');
-      console.error(err);
-    }
+      </div>
+    `).join('') : '<p style="padding:14px 16px;font-size:13px;color:var(--text-2);">Nenhuma semana aguardando aprovação.</p>';
   }
 
   window.aprovarSemana = async function(id) {
-    try {
-      await updateDoc(doc(db, 'semanas', id), { status: 'Aprovado' });
-      showToast('Semana aprovada!');
-      carregarPainelAdmin();
-    } catch (err) { showToast('Erro ao aprovar.'); }
+    await updateDoc(doc(db, 'semanas', id), { status: 'Aprovado' });
+    showToast('Semana aprovada!');
+    await carregarPainelAdmin();
   };
 
   window.devolverSemana = async function(id) {
-    try {
-      await updateDoc(doc(db, 'semanas', id), { status: 'Devolvido' });
-      showToast('Semana devolvida.');
-      carregarPainelAdmin();
-    } catch (err) { showToast('Erro ao devolver.'); }
+    await updateDoc(doc(db, 'semanas', id), { status: 'Devolvido' });
+    showToast('Semana devolvida.');
+    await carregarPainelAdmin();
   };
 
   // ═══════════════════════════════
@@ -696,9 +664,9 @@ iniciarApp();
     const diaEl = document.getElementById('desp-dia');
     if (diaEl) {
       const id = window._appState.semanaAtual;
-      const s  = id ? window._appState.semanas.find(x => x.id === id) : null;
+      const s  = window._appState.semanas.find(x => x.id === id);
       if (s && s.diasKm && s.diasKm.length) {
-        diaEl.innerHTML = s.diasKm.map((d, i) => `<option>${d.destino ? d.destino : 'Dia ' + (i + 1)}</option>`).join('');
+        diaEl.innerHTML = s.diasKm.map((d, i) => `<option>${d.destino ? d.destino : 'Dia ' + (i+1)}</option>`).join('');
       } else {
         diaEl.innerHTML = `
           <option>Segunda-feira</option><option>Terça-feira</option>
@@ -708,11 +676,6 @@ iniciarApp();
     }
     navTo('screen-despesa');
   };
-
-  // ── inicia na tela de login ao carregar ──
-  document.addEventListener('DOMContentLoaded', () => {
-    navTo('screen-login');
-  });
 </script>
 
 <style>
@@ -828,6 +791,7 @@ p { line-height: 1.5; }
   display: inline-flex; align-items: center;
   font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
   padding: 3px 9px; border-radius: 20px; border: 1px solid;
+  white-space: nowrap;
 }
 .badge-green { background: var(--green-bg); color: var(--green); border-color: var(--green-border); }
 .badge-amber { background: var(--amber-bg); color: var(--amber); border-color: var(--amber-border); }
@@ -935,7 +899,6 @@ p { line-height: 1.5; }
   opacity: 0; transition: all 0.25s; z-index: 999; white-space: nowrap; pointer-events: none;
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-.divider { height: 1px; background: var(--border); margin: 8px 0; }
 .week-item {
   display: flex; justify-content: space-between; align-items: center;
   padding: 14px 16px; border-bottom: 1px solid var(--border); cursor: pointer;
@@ -949,6 +912,28 @@ p { line-height: 1.5; }
 .stat-row:last-child { border-bottom: none; }
 .stat-label { color: var(--text-2); }
 .stat-value { font-weight: 600; font-family: var(--mono); }
+.erro-msg { color: var(--red); font-size: 13px; background: var(--red-bg); border: 1px solid var(--red-border); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 12px; display: none; }
+
+/* Loading overlay */
+#loading-overlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(245,244,240,0.88);
+  flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 12px;
+  backdrop-filter: blur(2px);
+}
+.spinner {
+  width: 28px; height: 28px;
+  border: 3px solid var(--border-strong);
+  border-top-color: var(--text);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+#loading-msg { font-size: 14px; font-weight: 500; color: var(--text-2); }
+
 @media (min-width: 431px) {
   body { align-items: center; min-height: 100vh; background: #E8E7E3; padding: 20px; }
   .app-shell { border-radius: 24px; max-height: 90vh; overflow: hidden; box-shadow: 0 4px 40px rgba(0,0,0,0.14); }
@@ -959,6 +944,12 @@ p { line-height: 1.5; }
 </head>
 <body>
 <div class="app-shell">
+
+<!-- LOADING OVERLAY -->
+<div id="loading-overlay">
+  <div class="spinner"></div>
+  <span id="loading-msg">Carregando…</span>
+</div>
 
 <!-- ══════════════════════════════
      TELA 1: LOGIN
@@ -974,16 +965,18 @@ p { line-height: 1.5; }
     <p style="font-size:14px; color:var(--text-2);">Grupo Supersafra</p>
   </div>
   <div class="scroll-content" style="padding-top:28px;">
+    <div id="login-erro" class="erro-msg"></div>
     <div class="field">
       <label>E-mail</label>
-      <input type="email" id="login-email" placeholder="seu@email.com" autocomplete="email">
+      <input type="email" id="login-email" placeholder="seu@gruposupersafra.com.br" autocomplete="email">
     </div>
     <div class="field">
       <label>Senha</label>
-      <input type="password" id="login-senha" placeholder="••••••••" autocomplete="current-password">
+      <input type="password" id="login-senha" placeholder="••••••••" autocomplete="current-password"
+        onkeydown="if(event.key==='Enter') fazerLogin()">
     </div>
     <button id="btn-login" class="btn btn-primary btn-full" style="margin-top:8px;" onclick="fazerLogin()">Entrar</button>
-    <p style="text-align:center; font-size:12px; color:var(--text-3); margin-top:16px;">Acesso restrito a usuários cadastrados.</p>
+    <p style="text-align:center; font-size:12px; color:var(--text-3); margin-top:16px;">Primeiro acesso? Solicite ao administrador.</p>
   </div>
 </div>
 
@@ -993,7 +986,7 @@ p { line-height: 1.5; }
 <div id="screen-home" class="screen">
   <div class="topbar">
     <div style="display:flex;align-items:center;gap:10px;">
-      <div class="avatar" id="home-avatar">CT</div>
+      <div class="avatar" id="home-avatar">SG</div>
       <div>
         <p style="font-size:12px;color:var(--text-2);">Olá,</p>
         <p style="font-size:15px;font-weight:600;" id="home-nome">Consultor</p>
@@ -1025,7 +1018,7 @@ p { line-height: 1.5; }
     <div class="section-label">Semanas</div>
     <div class="card" style="margin-bottom:10px;">
       <div id="lista-semanas">
-        <p style="font-size:13px;color:var(--text-2);padding:12px 16px;">Carregando…</p>
+        <p style="font-size:13px;color:var(--text-2);padding:14px 16px;">Nenhuma semana ainda.</p>
       </div>
     </div>
     <button class="btn btn-primary btn-full" onclick="irParaNovaSemana()">+ Nova semana</button>
@@ -1078,47 +1071,47 @@ p { line-height: 1.5; }
               <th style="width:52px;text-align:right;">Total</th>
             </tr>
           </thead>
-          <tbody id="km-tbody">
+          <tbody>
             <tr>
               <td style="color:var(--text-2);font-size:12px;">Seg</td>
               <td><input type="text" id="dest-0" placeholder="Destino" oninput="calcTotal(this)"></td>
-              <td><input type="number" id="ini-0" placeholder="0" oninput="calcTotal(this)" data-col="ini" data-row="0"></td>
-              <td><input type="number" id="fin-0" placeholder="0" oninput="calcTotal(this)" data-col="fin" data-row="0"></td>
+              <td><input type="number" id="ini-0" placeholder="0" oninput="calcTotal(this)" data-row="0"></td>
+              <td><input type="number" id="fin-0" placeholder="0" oninput="calcTotal(this)" data-row="0"></td>
               <td class="day-total" id="tot-0">—</td>
             </tr>
             <tr>
               <td style="color:var(--text-2);font-size:12px;">Ter</td>
               <td><input type="text" id="dest-1" placeholder="Destino" oninput="calcTotal(this)"></td>
-              <td><input type="number" id="ini-1" placeholder="0" oninput="calcTotal(this)" data-col="ini" data-row="1"></td>
-              <td><input type="number" id="fin-1" placeholder="0" oninput="calcTotal(this)" data-col="fin" data-row="1"></td>
+              <td><input type="number" id="ini-1" placeholder="0" oninput="calcTotal(this)" data-row="1"></td>
+              <td><input type="number" id="fin-1" placeholder="0" oninput="calcTotal(this)" data-row="1"></td>
               <td class="day-total" id="tot-1">—</td>
             </tr>
             <tr>
               <td style="color:var(--text-2);font-size:12px;">Qua</td>
               <td><input type="text" id="dest-2" placeholder="Destino" oninput="calcTotal(this)"></td>
-              <td><input type="number" id="ini-2" placeholder="0" oninput="calcTotal(this)" data-col="ini" data-row="2"></td>
-              <td><input type="number" id="fin-2" placeholder="0" oninput="calcTotal(this)" data-col="fin" data-row="2"></td>
+              <td><input type="number" id="ini-2" placeholder="0" oninput="calcTotal(this)" data-row="2"></td>
+              <td><input type="number" id="fin-2" placeholder="0" oninput="calcTotal(this)" data-row="2"></td>
               <td class="day-total" id="tot-2">—</td>
             </tr>
             <tr>
               <td style="color:var(--text-2);font-size:12px;">Qui</td>
               <td><input type="text" id="dest-3" placeholder="Destino" oninput="calcTotal(this)"></td>
-              <td><input type="number" id="ini-3" placeholder="0" oninput="calcTotal(this)" data-col="ini" data-row="3"></td>
-              <td><input type="number" id="fin-3" placeholder="0" oninput="calcTotal(this)" data-col="fin" data-row="3"></td>
+              <td><input type="number" id="ini-3" placeholder="0" oninput="calcTotal(this)" data-row="3"></td>
+              <td><input type="number" id="fin-3" placeholder="0" oninput="calcTotal(this)" data-row="3"></td>
               <td class="day-total" id="tot-3">—</td>
             </tr>
             <tr>
               <td style="color:var(--text-2);font-size:12px;">Sex</td>
               <td><input type="text" id="dest-4" placeholder="Destino" oninput="calcTotal(this)"></td>
-              <td><input type="number" id="ini-4" placeholder="0" oninput="calcTotal(this)" data-col="ini" data-row="4"></td>
-              <td><input type="number" id="fin-4" placeholder="0" oninput="calcTotal(this)" data-col="fin" data-row="4"></td>
+              <td><input type="number" id="ini-4" placeholder="0" oninput="calcTotal(this)" data-row="4"></td>
+              <td><input type="number" id="fin-4" placeholder="0" oninput="calcTotal(this)" data-row="4"></td>
               <td class="day-total" id="tot-4">—</td>
             </tr>
             <tr>
               <td style="color:var(--text-2);font-size:12px;">Sáb</td>
               <td><input type="text" id="dest-5" placeholder="Destino" oninput="calcTotal(this)"></td>
-              <td><input type="number" id="ini-5" placeholder="0" oninput="calcTotal(this)" data-col="ini" data-row="5"></td>
-              <td><input type="number" id="fin-5" placeholder="0" oninput="calcTotal(this)" data-col="fin" data-row="5"></td>
+              <td><input type="number" id="ini-5" placeholder="0" oninput="calcTotal(this)" data-row="5"></td>
+              <td><input type="number" id="fin-5" placeholder="0" oninput="calcTotal(this)" data-row="5"></td>
               <td class="day-total" id="tot-5">—</td>
             </tr>
           </tbody>
@@ -1424,14 +1417,14 @@ p { line-height: 1.5; }
         <span>Total</span>
       </div>
       <div id="admin-tabela-consultores">
-        <div class="consultant-row"><span style="color:var(--text-2);font-size:13px;">Carregando…</span></div>
+        <div class="consultant-row"><span style="color:var(--text-2);font-size:13px;">Nenhum dado ainda.</span></div>
       </div>
     </div>
 
     <div class="section-label">Semanas aguardando aprovação</div>
     <div class="card">
       <div id="admin-aguardando">
-        <p style="padding:14px 16px;font-size:13px;color:var(--text-2);">Carregando…</p>
+        <p style="padding:14px 16px;font-size:13px;color:var(--text-2);">Nenhuma semana aguardando aprovação.</p>
       </div>
     </div>
   </div>
