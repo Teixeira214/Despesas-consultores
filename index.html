@@ -47,6 +47,31 @@
   const auth = getAuth(app);
   const db   = getFirestore(app);
 
+  // ═══════════════════════════════════════════════════════════
+  // EXPÕE FirebaseAuth PARA SCRIPT CLÁSSICO (padrão robusto)
+  // ═══════════════════════════════════════════════════════════
+  window.FirebaseAuth = {
+    async login(email, password) {
+      return signInWithEmailAndPassword(auth, email, password);
+    },
+    async logout() {
+      return signOut(auth);
+    },
+    currentUser() {
+      return auth.currentUser;
+    }
+  };
+
+  // Dispara firebase-ready após verificar estado de auth
+  onAuthStateChanged(auth, (user) => {
+    window._firebaseUser = user;
+    if (!window._firebaseReadyDispatched) {
+      window._firebaseReadyDispatched = true;
+      window.dispatchEvent(new CustomEvent('firebase-ready'));
+    }
+    window.dispatchEvent(new CustomEvent('auth-state-changed', { detail: user }));
+  });
+
   // ═══════════════════════════════
   // ESTADO GLOBAL
   // ═══════════════════════════════
@@ -84,74 +109,20 @@
     window.scrollTo(0, 0);
   };
 
-  // ═══════════════════════════════
-  // LOGIN
-  // ═══════════════════════════════
-  window.fazerLogin = async function() {
-    const email  = document.getElementById('login-email').value.trim().toLowerCase();
-    const senha  = document.getElementById('login-senha').value;
-    const btnEl  = document.getElementById('btn-login');
-    const errEl  = document.getElementById('login-erro');
-
-    if (!email || !senha) {
-      errEl.textContent = 'Preencha e-mail e senha.';
-      errEl.style.display = 'block';
-      return;
-    }
-    errEl.style.display = 'none';
-    btnEl.textContent = 'Entrando…';
-    btnEl.disabled = true;
-
-    try {
-      const cred = await signInWithEmailAndPassword(auth, email, senha);
-
-      // Busca perfil no Firestore
-      const snap = await getDoc(doc(db, 'usuarios', cred.user.uid));
-      if (!snap.exists()) {
-        await signOut(auth);
-        throw new Error('perfil-nao-encontrado');
-      }
-
-      const perfil = snap.data();
-      window._appState.usuario = { uid: cred.user.uid, email, ...perfil };
-      await iniciarApp();
-
-    } catch (e) {
-      console.error('[Login]', e.code || e.message, e);
-      errEl.textContent = traduzirErroAuth(e.code || e.message);
-      errEl.style.display = 'block';
-    } finally {
-      btnEl.textContent = 'Entrar';
-      btnEl.disabled = false;
-    }
-  };
-
-  function traduzirErroAuth(code) {
-    const map = {
-      'auth/invalid-credential':      'E-mail ou senha incorretos.',
-      'auth/invalid-email':           'E-mail inválido.',
-      'auth/user-not-found':          'E-mail não cadastrado.',
-      'auth/wrong-password':          'Senha incorreta.',
-      'auth/too-many-requests':       'Muitas tentativas. Aguarde alguns minutos.',
-      'auth/network-request-failed':  'Sem conexão. Verifique sua internet.',
-      'auth/user-disabled':           'Esta conta foi desativada.',
-      'auth/api-key-not-valid':       '⚠️ API Key do Firebase inválida.',
-      'auth/configuration-not-found': '⚠️ Projeto Firebase não encontrado.',
-      'perfil-nao-encontrado':        'Perfil não encontrado. Contate o administrador.',
-    };
-    return map[code] || `Erro ao entrar (${code}). Veja o Console (F12) para detalhes.`;
-  }
-
+  // ═══════════════════════════════════════════════════════════
+  // LOGOUT (exposto para onclick no HTML)
+  // ═══════════════════════════════════════════════════════════
   window.fazerLogout = async function() {
-    await signOut(auth);
+    if (window.FirebaseAuth) await window.FirebaseAuth.logout();
     window._appState = { usuario: null, semanaAtual: null, semanas: [], despesas: [] };
     navTo('screen-login');
   };
 
-  // ═══════════════════════════════
-  // AUTH STATE — persiste sessão
-  // ═══════════════════════════════
-  onAuthStateChanged(auth, async (user) => {
+  // ═══════════════════════════════════════════════════════════
+  // AUTH STATE — reage a login/logout via evento
+  // ═══════════════════════════════════════════════════════════
+  window.addEventListener('auth-state-changed', async (ev) => {
+    const user = ev.detail;
     if (user) {
       setLoading(true, 'Carregando perfil…');
       try {
@@ -160,7 +131,7 @@
           window._appState.usuario = { uid: user.uid, email: user.email, ...snap.data() };
           await iniciarApp();
         } else {
-          await signOut(auth);
+          if (window.FirebaseAuth) await window.FirebaseAuth.logout();
           navTo('screen-login');
         }
       } catch (e) {
@@ -408,7 +379,6 @@
         const snap2 = await getDocs(q2);
         window._appState.despesas = snap2.docs.map(d => ({ id: d.id, ...d.data() }));
       } catch (e2) {
-        console.error('[Despesas] Fallback também falhou:', e2);
         window._appState.despesas = [];
       }
     }
@@ -976,7 +946,7 @@ p { line-height: 1.5; }
       <input type="password" id="login-senha" placeholder="••••••••" autocomplete="current-password"
         onkeydown="if(event.key==='Enter') fazerLogin()">
     </div>
-    <button id="btn-login" class="btn btn-primary btn-full" style="margin-top:8px;" onclick="fazerLogin()">Entrar</button>
+    <button id="btn-login" class="btn btn-primary btn-full" style="margin-top:8px;" >Entrar</button>
     <p style="text-align:center; font-size:12px; color:var(--text-3); margin-top:16px;">Primeiro acesso? Solicite ao administrador.</p>
   </div>
 </div>
@@ -1435,5 +1405,62 @@ p { line-height: 1.5; }
 <div class="toast" id="toast"></div>
 
 </div><!-- /app-shell -->
+
+<script>
+/* ══ LOGIN via addEventListener — padrão robusto (sem depender de module scope) ══ */
+(function() {
+  function traduzirErro(code) {
+    const map = {
+      'auth/invalid-credential':      'E-mail ou senha incorretos.',
+      'auth/invalid-email':           'E-mail inválido.',
+      'auth/user-not-found':          'E-mail não cadastrado.',
+      'auth/wrong-password':          'Senha incorreta.',
+      'auth/too-many-requests':       'Muitas tentativas. Aguarde alguns minutos.',
+      'auth/network-request-failed':  'Sem conexão. Verifique sua internet.',
+      'auth/user-disabled':           'Esta conta foi desativada.',
+      'perfil-nao-encontrado':        'Perfil não encontrado. Contate o administrador.',
+    };
+    return map[code] || 'Erro ao entrar (' + code + ').';
+  }
+
+  async function tentarLogin() {
+    const email  = document.getElementById('login-email').value.trim().toLowerCase();
+    const senha  = document.getElementById('login-senha').value;
+    const btnEl  = document.getElementById('btn-login');
+    const errEl  = document.getElementById('login-erro');
+
+    if (!email || !senha) {
+      errEl.textContent = 'Preencha e-mail e senha.';
+      errEl.style.display = 'block';
+      return;
+    }
+    errEl.style.display = 'none';
+    btnEl.textContent = 'Entrando…';
+    btnEl.disabled = true;
+
+    try {
+      if (!window.FirebaseAuth) throw { code: 'auth/network-request-failed' };
+      await window.FirebaseAuth.login(email, senha);
+      // Sucesso: auth-state-changed cuida do restante
+    } catch (e) {
+      errEl.textContent = traduzirErro(e.code || e.message);
+      errEl.style.display = 'block';
+    } finally {
+      btnEl.textContent = 'Entrar';
+      btnEl.disabled = false;
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    const btn   = document.getElementById('btn-login');
+    const senha = document.getElementById('login-senha');
+    if (btn)   btn.addEventListener('click', tentarLogin);
+    if (senha) senha.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') tentarLogin();
+    });
+  });
+})();
+</script>
+
 </body>
 </html>
