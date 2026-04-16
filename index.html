@@ -795,15 +795,22 @@
     const target = document.getElementById('admin-panel-' + aba);
     if (target) target.style.display = '';
 
-    // Update both sidenav items (mobile) and top nav tabs (desktop)
+    // Update sidenav items, side-suffixed items and top nav tabs
     document.querySelectorAll('.admin-sidenav-item').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.admin-nav-tab').forEach(el => el.classList.remove('active'));
     const tabEl = document.getElementById('admin-tab-' + aba);
     if (tabEl) tabEl.classList.add('active');
+    const sideEl = document.getElementById('admin-tab-' + aba + '-side');
+    if (sideEl) sideEl.classList.add('active');
     window._adminState.aba = aba;
 
     if (aba === 'consultores') renderAdminConsultores();
     if (aba === 'usuarios')    carregarUsuariosAdmin();
+  };
+
+  window.toggleAdminSidebar = function() {
+    const nav = document.getElementById('admin-sidenav');
+    if (nav) nav.classList.toggle('collapsed');
   };
 
   function renderAdminConsultores() {
@@ -933,14 +940,14 @@
 
 <style>
 :root {
-  --bg: #F0F2F5;
+  --bg: #EEF2F8;
   --surface: #FFFFFF;
-  --surface2: #F0F2F5;
+  --surface2: #F4F7FB;
   --border: rgba(0,0,0,0.09);
   --border-strong: rgba(0,0,0,0.18);
-  --text: #1A2236;
-  --text-2: #5A6478;
-  --text-3: #9AA3B4;
+  --text: #0D1117;
+  --text-2: #4A5568;
+  --text-3: #8A96A8;
   --green: #1B7C4A;
   --green-bg: #E8F5EE;
   --green-border: #A3D4B8;
@@ -961,8 +968,13 @@
   --radius-lg: 14px;
   --font: 'DM Sans', sans-serif;
   --mono: 'DM Mono', monospace;
+  --sidebar-w: 240px;
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
 body {
   font-family: var(--font);
   background: var(--bg);
@@ -985,6 +997,7 @@ body {
   display: flex;
   flex-direction: column;
   position: relative;
+  overflow-x: hidden;
 }
 /* Prevent iOS zoom on input focus */
 .field input, .field select, .field textarea,
@@ -1224,28 +1237,62 @@ p { line-height: 1.5; }
 
 /* ── DESKTOP ADMIN LAYOUT ── */
 @media (min-width: 431px) {
-  body { align-items: flex-start; min-height: 100vh; background: var(--bg); padding: 0; }
-  .app-shell { border-radius: 0; max-height: unset; min-height: 100vh; overflow: unset; box-shadow: none; max-width: 430px; }
+  body { align-items: flex-start; min-height: 100vh; background: var(--bg); padding: 0; overflow-x: hidden; justify-content: center; }
+  .app-shell { border-radius: 0; max-height: unset; min-height: 100vh; overflow: unset; box-shadow: none; max-width: 430px; width: 100%; }
   .screen { min-height: unset; }
   .screen.active { max-height: unset; overflow: unset; }
   .scroll-content { overflow-y: auto; }
 
-  /* Admin usa layout fullwidth sem sidenav */
+  /* Admin usa layout fullwidth com sidenav lateral */
   #screen-admin.active {
     display: flex;
     flex-direction: column;
-    max-width: 100vw;
     width: 100vw;
+    max-width: 100vw;
     min-height: 100vh;
     max-height: 100vh;
     overflow: hidden;
+    position: fixed;
+    top: 0; left: 0;
   }
-  #admin-topbar    { flex-shrink: 0; }
-  #admin-sidenav   { display: none !important; }
-  #admin-main-area { flex: 1; overflow-y: auto; max-width: 1200px; margin: 0 auto; width: 100%; padding: 32px 40px; }
+  #admin-topbar { flex-shrink: 0; }
+
+  /* Sidenav lateral colapsavel */
+  #admin-body-wrap {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+  #admin-sidenav {
+    display: flex !important;
+    flex-direction: column;
+    width: var(--sidebar-w);
+    min-width: var(--sidebar-w);
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 16px 10px;
+    overflow-y: auto;
+    flex-shrink: 0;
+    transition: width 0.22s ease, min-width 0.22s ease, padding 0.22s ease;
+  }
+  #admin-sidenav.collapsed {
+    width: 52px;
+    min-width: 52px;
+    padding: 16px 6px;
+  }
+  #admin-sidenav.collapsed .sidenav-label,
+  #admin-sidenav.collapsed .sidenav-item-text,
+  #admin-sidenav.collapsed .admin-sidenav-divider {
+    display: none !important;
+  }
+  #admin-sidenav.collapsed .admin-sidenav-item {
+    justify-content: center;
+    padding: 9px;
+  }
+  #admin-main-area { flex: 1; overflow-y: auto; overflow-x: hidden; width: 100%; padding: 32px 40px; background: var(--bg); }
 }
 
-/* ── SIDENAV — hidden, kept for mobile bottom nav logic ── */
+/* ── SIDENAV — colapsavel via botao hamburger ── */
 #admin-sidenav {
   display: none;
 }
@@ -1257,12 +1304,26 @@ p { line-height: 1.5; }
   background: none; font-family: var(--font); width: 100%; text-align: left;
 }
 .admin-sidenav-item:hover { background: var(--surface2); color: var(--text); }
-.admin-sidenav-item.active { background: var(--surface2); color: var(--text); font-weight: 600; }
+.admin-sidenav-item.active { background: var(--blue-bg); color: var(--blue); font-weight: 600; }
 .admin-sidenav-item svg { width: 17px; height: 17px; flex-shrink: 0; }
 .admin-sidenav-divider { height: 1px; background: var(--border); margin: 8px 0; }
+.sidenav-label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3); padding: 4px 12px 8px; }
+
+/* Hamburger toggle button */
+#btn-sidebar-toggle {
+  display: none;
+  background: none; border: none; cursor: pointer;
+  color: rgba(255,255,255,0.85); padding: 6px; border-radius: 7px;
+  transition: background 0.15s; margin-right: 8px;
+}
+#btn-sidebar-toggle:hover { background: rgba(255,255,255,0.12); }
+#btn-sidebar-toggle svg { display: block; width: 20px; height: 20px; }
+@media (min-width: 431px) {
+  #btn-sidebar-toggle { display: flex; align-items: center; justify-content: center; }
+}
 
 /* ── MAIN AREA ── */
-#admin-main-area { background: var(--bg); padding: 28px 32px; }
+#admin-main-area { background: var(--bg); padding: 28px 32px; overflow-x: hidden; }
 #admin-main-area .section-label { margin-top: 0; }
 
 /* ── ADMIN TABLE ── */
@@ -1335,10 +1396,12 @@ p { line-height: 1.5; }
 @media (max-width: 430px) {
   #admin-sidenav { display: none !important; }
   #admin-nav-tabs { display: none !important; }
+  #admin-body-wrap { display: block; }
   #admin-main-area { padding: 16px 20px 100px; background: var(--bg); }
   .admin-kpis { grid-template-columns: 1fr 1fr; }
   #admin-topbar { display: flex !important; padding: 0 20px; }
   #admin-bottom-nav { display: flex !important; }
+  #btn-sidebar-toggle { display: none !important; }
 }
 
 </style>
@@ -1824,6 +1887,12 @@ p { line-height: 1.5; }
   <!-- TOPBAR (desktop) -->
   <div id="admin-topbar">
     <div style="display:flex;align-items:center;gap:16px;height:64px;">
+      <!-- Hamburger toggle -->
+      <button id="btn-sidebar-toggle" onclick="toggleAdminSidebar()" aria-label="Menu lateral">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+      </button>
       <div style="display:flex;align-items:center;gap:10px;">
         <div class="login-logo" style="width:36px;height:36px;border-radius:9px;background:rgba(255,255,255,0.15);">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:16px;height:16px;color:#fff;">
@@ -1835,29 +1904,6 @@ p { line-height: 1.5; }
           <p style="font-size:13px;font-weight:700;color:#fff;" id="admin-nome">Admin</p>
         </div>
       </div>
-      <div style="width:1px;height:28px;background:rgba(255,255,255,0.15);margin:0 4px;"></div>
-      <!-- Horizontal nav tabs -->
-      <div id="admin-nav-tabs">
-        <button class="admin-nav-tab active" id="admin-tab-painel" onclick="adminNavTo('painel')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-            <rect x="3" y="12" width="6" height="9" rx="1"/><rect x="9" y="7" width="6" height="14" rx="1"/><rect x="15" y="9" width="6" height="12" rx="1"/>
-          </svg>
-          Painel geral
-        </button>
-        <button class="admin-nav-tab" id="admin-tab-consultores" onclick="adminNavTo('consultores')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-          </svg>
-          Consultores
-        </button>
-        <button class="admin-nav-tab" id="admin-tab-usuarios" onclick="adminNavTo('usuarios')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-            <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
-          </svg>
-          Usuários
-        </button>
-      </div>
     </div>
     <div style="display:flex;align-items:center;gap:12px;">
       <div class="avatar" style="background:rgba(255,255,255,0.2);color:#fff;border:1px solid rgba(255,255,255,0.3);font-weight:700;" id="admin-sigla">A</div>
@@ -1868,34 +1914,43 @@ p { line-height: 1.5; }
     </div>
   </div>
 
+  <!-- SIDENAV + MAIN AREA wrapper -->
+  <div id="admin-body-wrap">
+
   <!-- SIDENAV (desktop) -->
   <nav id="admin-sidenav">
-    <p style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-3);padding:4px 12px 8px;">Menu</p>
+    <p class="sidenav-label">Menu</p>
     <button class="admin-sidenav-item active" id="admin-tab-painel" onclick="adminNavTo('painel')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
         <rect x="3" y="12" width="6" height="9" rx="1"/><rect x="9" y="7" width="6" height="14" rx="1"/><rect x="15" y="9" width="6" height="12" rx="1"/>
       </svg>
-      Painel geral
+      <span class="sidenav-item-text">Painel geral</span>
     </button>
-    <button class="admin-sidenav-item" id="admin-tab-consultores" onclick="adminNavTo('consultores')">
+    <button class="admin-sidenav-item" id="admin-tab-consultores-side" onclick="adminNavTo('consultores')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
         <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
       </svg>
-      Consultores
+      <span class="sidenav-item-text">Consultores</span>
     </button>
-    <button class="admin-sidenav-item" id="admin-tab-usuarios" onclick="adminNavTo('usuarios')">
+    <button class="admin-sidenav-item" id="admin-tab-historico-side" onclick="adminNavTo('historico')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/>
+      </svg>
+      <span class="sidenav-item-text">Histórico</span>
+    </button>
+    <button class="admin-sidenav-item" id="admin-tab-usuarios-side" onclick="adminNavTo('usuarios')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
         <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
       </svg>
-      Usuários
+      <span class="sidenav-item-text">Usuários</span>
     </button>
     <div class="admin-sidenav-divider"></div>
     <button class="admin-sidenav-item" onclick="fazerLogout()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
         <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
       </svg>
-      Sair
+      <span class="sidenav-item-text">Sair</span>
     </button>
   </nav>
 
@@ -2070,6 +2125,7 @@ p { line-height: 1.5; }
     </div>
 
   </div><!-- /admin-main-area -->
+  </div><!-- /admin-body-wrap -->
 
   <!-- Bottom nav (mobile only) -->
   <div class="bottom-nav" id="admin-bottom-nav" style="display:none;">
@@ -2084,6 +2140,12 @@ p { line-height: 1.5; }
         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
       </svg>
       Consultores
+    </div>
+    <div class="bnav-item" onclick="adminNavTo('historico')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/>
+      </svg>
+      Histórico
     </div>
     <div class="bnav-item" onclick="adminNavTo('usuarios')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
