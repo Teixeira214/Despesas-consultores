@@ -795,7 +795,9 @@
     const target = document.getElementById('admin-panel-' + aba);
     if (target) target.style.display = '';
 
+    // Update both sidenav items (mobile) and top nav tabs (desktop)
     document.querySelectorAll('.admin-sidenav-item').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.admin-nav-tab').forEach(el => el.classList.remove('active'));
     const tabEl = document.getElementById('admin-tab-' + aba);
     if (tabEl) tabEl.classList.add('active');
     window._adminState.aba = aba;
@@ -931,14 +933,14 @@
 
 <style>
 :root {
-  --bg: #F5F4F0;
+  --bg: #F0F2F5;
   --surface: #FFFFFF;
-  --surface2: #EFEFEB;
+  --surface2: #F0F2F5;
   --border: rgba(0,0,0,0.09);
   --border-strong: rgba(0,0,0,0.18);
-  --text: #1A1A18;
-  --text-2: #6B6B65;
-  --text-3: #A8A8A2;
+  --text: #1A2236;
+  --text-2: #5A6478;
+  --text-3: #9AA3B4;
   --green: #1B7C4A;
   --green-bg: #E8F5EE;
   --green-border: #A3D4B8;
@@ -948,10 +950,13 @@
   --red: #B33030;
   --red-bg: #FEF0F0;
   --red-border: #F5B8B8;
-  --blue: #1A5FA8;
+  --blue: #2563EB;
   --blue-bg: #EBF3FD;
   --blue-border: #A8CFEF;
-  --accent: #1A1A18;
+  --navy: #0F2044;
+  --navy-2: #1A3060;
+  --navy-3: #243B7A;
+  --accent: #2563EB;
   --radius: 10px;
   --radius-lg: 14px;
   --font: 'DM Sans', sans-serif;
@@ -1004,33 +1009,33 @@ p { line-height: 1.5; }
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 20px 12px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  background: var(--navy);
+  border-bottom: none;
 }
 .topbar-back {
   display: flex; align-items: center; gap: 6px;
-  font-size: 14px; font-weight: 500; color: var(--text-2);
+  font-size: 14px; font-weight: 500; color: rgba(255,255,255,0.7);
   cursor: pointer; background: none; border: none; font-family: var(--font);
 }
-.topbar-back:hover { color: var(--text); }
-.topbar-title { font-size: 15px; font-weight: 600; }
-.topbar-action { font-size: 13px; font-weight: 500; color: var(--blue); cursor: pointer; background: none; border: none; font-family: var(--font); }
+.topbar-back:hover { color: #fff; }
+.topbar-title { font-size: 15px; font-weight: 600; color: #fff; }
+.topbar-action { font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.8); cursor: pointer; background: none; border: none; font-family: var(--font); }
 .scroll-content { flex: 1; overflow-y: auto; padding: 16px 20px; padding-bottom: max(100px, calc(80px + env(safe-area-inset-bottom))); -webkit-overflow-scrolling: touch; }
 .bottom-nav {
   position: sticky; bottom: 0;
   display: flex;
-  background: var(--surface);
-  border-top: 1px solid var(--border);
+  background: var(--navy);
+  border-top: none;
   padding: 8px 0;
   padding-bottom: max(10px, env(safe-area-inset-bottom));
   z-index: 10;
 }
 .bnav-item {
   flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
-  cursor: pointer; font-size: 11px; font-weight: 500; color: var(--text-3);
+  cursor: pointer; font-size: 11px; font-weight: 500; color: rgba(255,255,255,0.45);
   padding: 4px 0; transition: color 0.15s;
 }
-.bnav-item.active { color: var(--text); }
+.bnav-item.active { color: #fff; }
 .bnav-item svg { width: 22px; height: 22px; }
 .card {
   background: var(--surface);
@@ -1090,7 +1095,7 @@ p { line-height: 1.5; }
   text-decoration: none;
 }
 .btn:active { transform: scale(0.98); opacity: 0.85; }
-.btn-primary { background: var(--text); color: #fff; border-color: var(--text); }
+.btn-primary { background: var(--navy); color: #fff; border-color: var(--navy); }
 .btn-secondary { background: var(--surface); color: var(--text); border-color: var(--border-strong); }
 .btn-success { background: var(--green-bg); color: var(--green); border-color: var(--green-border); }
 .btn-full { width: 100%; margin-bottom: 8px; }
@@ -1146,11 +1151,11 @@ p { line-height: 1.5; }
 .mono { font-family: var(--mono); }
 .login-header {
   padding: 48px 28px 32px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  background: var(--navy);
+  border-bottom: none;
 }
 .login-logo {
-  width: 44px; height: 44px; background: var(--text); border-radius: 12px;
+  width: 44px; height: 44px; background: rgba(255,255,255,0.15); border-radius: 12px;
   display: flex; align-items: center; justify-content: center; margin-bottom: 20px;
 }
 .login-logo svg { width: 22px; height: 22px; color: #fff; }
@@ -1187,7 +1192,7 @@ p { line-height: 1.5; }
 #loading-overlay {
   display: none;
   position: fixed; inset: 0; z-index: 9999;
-  background: rgba(245,244,240,0.88);
+  background: rgba(240,242,245,0.90);
   flex-direction: column;
   align-items: center; justify-content: center;
   gap: 12px;
@@ -1203,7 +1208,13 @@ p { line-height: 1.5; }
 @keyframes spin { to { transform: rotate(360deg); } }
 #loading-msg { font-size: 14px; font-weight: 500; color: var(--text-2); }
 
-/* ── BOTÕES DE AÇÃO ADMIN ── */
+/* topbar-back inside admin main area (light bg) */
+#admin-main-area .topbar-back {
+  color: var(--text-2);
+}
+#admin-main-area .topbar-back:hover {
+  color: var(--text);
+}
 .btn-acao {
   font-size:12px;padding:4px 12px;border-radius:6px;cursor:pointer;
   font-family:var(--font);font-weight:600;border:1px solid;
@@ -1213,36 +1224,30 @@ p { line-height: 1.5; }
 
 /* ── DESKTOP ADMIN LAYOUT ── */
 @media (min-width: 431px) {
-  body { align-items: flex-start; min-height: 100vh; background: #E8E7E3; padding: 0; }
+  body { align-items: flex-start; min-height: 100vh; background: var(--bg); padding: 0; }
   .app-shell { border-radius: 0; max-height: unset; min-height: 100vh; overflow: unset; box-shadow: none; max-width: 430px; }
   .screen { min-height: unset; }
   .screen.active { max-height: unset; overflow: unset; }
   .scroll-content { overflow-y: auto; }
 
-  /* Admin usa layout diferente no desktop */
+  /* Admin usa layout fullwidth sem sidenav */
   #screen-admin.active {
-    display: grid;
-    grid-template-columns: 220px 1fr;
-    grid-template-rows: 64px 1fr;
+    display: flex;
+    flex-direction: column;
     max-width: 100vw;
     width: 100vw;
     min-height: 100vh;
     max-height: 100vh;
     overflow: hidden;
   }
-  #admin-topbar    { grid-column: 1 / -1; grid-row: 1; }
-  #admin-sidenav   { grid-column: 1; grid-row: 2; overflow-y: auto; }
-  #admin-main-area { grid-column: 2; grid-row: 2; overflow-y: auto; }
+  #admin-topbar    { flex-shrink: 0; }
+  #admin-sidenav   { display: none !important; }
+  #admin-main-area { flex: 1; overflow-y: auto; max-width: 1200px; margin: 0 auto; width: 100%; padding: 32px 40px; }
 }
 
-/* ── SIDENAV ── */
+/* ── SIDENAV — hidden, kept for mobile bottom nav logic ── */
 #admin-sidenav {
-  background: var(--surface);
-  border-right: 1px solid var(--border);
-  padding: 16px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  display: none;
 }
 .admin-sidenav-item {
   display: flex; align-items: center; gap: 10px;
@@ -1257,7 +1262,7 @@ p { line-height: 1.5; }
 .admin-sidenav-divider { height: 1px; background: var(--border); margin: 8px 0; }
 
 /* ── MAIN AREA ── */
-#admin-main-area { background: #F0EFEb; padding: 28px 32px; }
+#admin-main-area { background: var(--bg); padding: 28px 32px; }
 #admin-main-area .section-label { margin-top: 0; }
 
 /* ── ADMIN TABLE ── */
@@ -1301,18 +1306,38 @@ p { line-height: 1.5; }
 /* ── TOPBAR ADMIN DESKTOP ── */
 #admin-topbar {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 0 24px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  height: 64px;
+  padding: 0 32px;
+  background: var(--navy);
+  border-bottom: none;
+  height: auto;
+  min-height: 64px;
+  flex-wrap: wrap;
+  gap: 0;
 }
+
+/* ── ADMIN HORIZONTAL NAV TABS ── */
+#admin-nav-tabs {
+  display: flex; align-items: center; gap: 2px;
+  margin-top: 0;
+}
+.admin-nav-tab {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px; border-radius: var(--radius);
+  font-size: 14px; font-weight: 500; color: rgba(255,255,255,0.65);
+  cursor: pointer; transition: all 0.15s; border: none;
+  background: none; font-family: var(--font);
+}
+.admin-nav-tab:hover { background: rgba(255,255,255,0.08); color: #fff; }
+.admin-nav-tab.active { background: rgba(255,255,255,0.15); color: #fff; font-weight: 600; }
+.admin-nav-tab svg { width: 16px; height: 16px; flex-shrink: 0; }
 
 /* Mobile: esconde sidenav, mostra bottom nav */
 @media (max-width: 430px) {
-  #admin-sidenav { display: none; }
-  #admin-main-area { padding: 16px 20px 100px; }
+  #admin-sidenav { display: none !important; }
+  #admin-nav-tabs { display: none !important; }
+  #admin-main-area { padding: 16px 20px 100px; background: var(--bg); }
   .admin-kpis { grid-template-columns: 1fr 1fr; }
-  #admin-topbar { display: flex !important; }
+  #admin-topbar { display: flex !important; padding: 0 20px; }
   #admin-bottom-nav { display: flex !important; }
 }
 
@@ -1337,8 +1362,8 @@ p { line-height: 1.5; }
         <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
       </svg>
     </div>
-    <h1 style="margin-bottom:6px;">Controle de<br>Despesas</h1>
-    <p style="font-size:14px; color:var(--text-2);">Grupo Supersafra</p>
+    <h1 style="margin-bottom:6px;color:#fff;">Controle de<br>Despesas</h1>
+    <p style="font-size:14px; color:rgba(255,255,255,0.65);">Grupo Supersafra</p>
   </div>
   <div class="scroll-content" style="padding-top:28px;">
     <div id="login-erro" class="erro-msg"></div>
@@ -1373,15 +1398,18 @@ p { line-height: 1.5; }
      TELA 2: HOME CONSULTOR
 ════════════════════════════════ -->
 <div id="screen-home" class="screen">
-  <div class="topbar">
+  <div class="topbar" style="background:var(--navy);border-bottom:none;">
     <div style="display:flex;align-items:center;gap:10px;">
-      <div class="avatar" id="home-avatar">SG</div>
+      <div class="avatar" id="home-avatar" style="background:rgba(255,255,255,0.18);color:#fff;border:1px solid rgba(255,255,255,0.25);font-weight:700;">SG</div>
       <div>
-        <p style="font-size:12px;color:var(--text-2);">Olá,</p>
-        <p style="font-size:15px;font-weight:600;" id="home-nome">Consultor</p>
+        <p style="font-size:12px;color:rgba(255,255,255,0.55);">Olá,</p>
+        <p style="font-size:15px;font-weight:600;color:#fff;" id="home-nome">Consultor</p>
       </div>
     </div>
-    <button class="btn-ghost" onclick="fazerLogout()">Sair</button>
+    <button onclick="fazerLogout()" style="display:flex;align-items:center;gap:6px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:rgba(255,255,255,0.85);padding:7px 14px;border-radius:var(--radius);font-size:13px;font-weight:500;cursor:pointer;font-family:var(--font);">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      Sair
+    </button>
   </div>
   <div class="scroll-content">
     <div class="section-label" id="label-mes">Mês atual</div>
@@ -1777,20 +1805,48 @@ p { line-height: 1.5; }
 
   <!-- TOPBAR (desktop) -->
   <div id="admin-topbar">
-    <div style="display:flex;align-items:center;gap:12px;">
-      <div class="login-logo" style="width:36px;height:36px;border-radius:9px;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:16px;height:16px;">
-          <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
-        </svg>
+    <div style="display:flex;align-items:center;gap:16px;height:64px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="login-logo" style="width:36px;height:36px;border-radius:9px;background:rgba(255,255,255,0.15);">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:16px;height:16px;color:#fff;">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <div>
+          <p style="font-size:10px;color:rgba(255,255,255,0.5);font-weight:600;letter-spacing:0.06em;text-transform:uppercase;">Controle de Despesas</p>
+          <p style="font-size:13px;font-weight:700;color:#fff;" id="admin-nome">Admin</p>
+        </div>
       </div>
-      <div>
-        <p style="font-size:11px;color:var(--text-3);font-weight:500;letter-spacing:0.04em;text-transform:uppercase;">Controle de Despesas</p>
-        <p style="font-size:13px;font-weight:600;" id="admin-nome">Admin</p>
+      <div style="width:1px;height:28px;background:rgba(255,255,255,0.15);margin:0 4px;"></div>
+      <!-- Horizontal nav tabs -->
+      <div id="admin-nav-tabs">
+        <button class="admin-nav-tab active" id="admin-tab-painel" onclick="adminNavTo('painel')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <rect x="3" y="12" width="6" height="9" rx="1"/><rect x="9" y="7" width="6" height="14" rx="1"/><rect x="15" y="9" width="6" height="12" rx="1"/>
+          </svg>
+          Painel geral
+        </button>
+        <button class="admin-nav-tab" id="admin-tab-consultores" onclick="adminNavTo('consultores')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+          Consultores
+        </button>
+        <button class="admin-nav-tab" id="admin-tab-usuarios" onclick="adminNavTo('usuarios')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+          </svg>
+          Usuários
+        </button>
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:12px;">
-      <div class="avatar" style="background:var(--text);color:#fff;" id="admin-sigla">A</div>
-      <button class="btn-ghost" onclick="fazerLogout()">Sair</button>
+      <div class="avatar" style="background:rgba(255,255,255,0.2);color:#fff;border:1px solid rgba(255,255,255,0.3);font-weight:700;" id="admin-sigla">A</div>
+      <button onclick="fazerLogout()" style="display:flex;align-items:center;gap:6px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:rgba(255,255,255,0.85);padding:7px 14px;border-radius:var(--radius);font-size:13px;font-weight:500;cursor:pointer;font-family:var(--font);transition:background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.18)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Sair
+      </button>
     </div>
   </div>
 
