@@ -336,7 +336,7 @@
       const dest = document.getElementById(`dest-${i}`);
       const ini  = document.getElementById(`ini-${i}`);
       const fin  = document.getElementById(`fin-${i}`);
-      if (dest) dest.value = d.destino || '';
+      if (dest) dest.value = d.destino || ''; // textarea also uses .value
       if (ini)  ini.value  = d.kmIni || '';
       if (fin)  fin.value  = d.kmFin || '';
       const tot = document.getElementById('tot-' + i);
@@ -552,7 +552,7 @@
   // CHECKLIST
   // ═══════════════════════════════
   window.toggleChk = function(btn, tipo) {
-    btn.parentElement.querySelectorAll('.check-btn').forEach(b => b.classList.remove('ok','nok'));
+    btn.parentElement.querySelectorAll('.check-btn').forEach(b => b.classList.remove('ok','nok','na'));
     btn.classList.add(tipo);
   };
 
@@ -564,7 +564,9 @@
       const label = item.querySelector('.check-item-label')?.textContent || '';
       const ok    = item.querySelector('.check-btn.ok');
       const nok   = item.querySelector('.check-btn.nok');
-      itens.push({ label, status: ok ? 'ok' : nok ? 'atencao' : 'pendente' });
+      const na2   = item.querySelector('.check-btn.na');
+      const na     = item.querySelector('.check-btn.na');
+      itens.push({ label, status: ok ? 'C' : nok ? 'NC' : na ? 'NA' : 'pendente' });
     });
     if (id) {
       await updateDoc(doc(db, 'semanas', id), { checklist: itens, checklistObs: obs });
@@ -920,16 +922,10 @@
   window.irParaDespesa = () => {
     const diaEl = document.getElementById('desp-dia');
     if (diaEl) {
-      const id = window._appState.semanaAtual;
-      const s  = window._appState.semanas.find(x => x.id === id);
-      if (s && s.diasKm && s.diasKm.length) {
-        diaEl.innerHTML = s.diasKm.map((d, i) => `<option>${d.destino ? d.destino : 'Dia ' + (i+1)}</option>`).join('');
-      } else {
-        diaEl.innerHTML = `
-          <option>Segunda-feira</option><option>Terça-feira</option>
-          <option>Quarta-feira</option><option>Quinta-feira</option>
-          <option>Sexta-feira</option><option>Sábado</option>`;
-      }
+      diaEl.innerHTML = `
+        <option>Segunda-feira</option><option>Terça-feira</option>
+        <option>Quarta-feira</option><option>Quinta-feira</option>
+        <option>Sexta-feira</option><option>Sábado</option>`;
     }
     navTo('screen-despesa');
   };
@@ -1153,6 +1149,7 @@ p { line-height: 1.5; }
 }
 .check-btn.ok  { background: var(--green-bg); color: var(--green); border-color: var(--green-border); }
 .check-btn.nok { background: var(--red-bg);   color: var(--red);   border-color: var(--red-border); }
+.check-btn.na  { background: var(--amber-bg); color: var(--amber); border-color: var(--amber-border); }
 .consultant-row {
   display: grid; grid-template-columns: 1fr 60px 90px 80px;
   gap: 8px; align-items: center;
@@ -1562,8 +1559,8 @@ p { line-height: 1.5; }
         <table class="day-grid">
           <thead>
             <tr>
-              <th style="width:80px;">Dia</th>
-              <th>Destino</th>
+              <th style="width:44px;">Dia</th>
+              <th>Destino / Clientes visitados</th>
               <th style="width:60px;">KM ini.</th>
               <th style="width:60px;">KM fin.</th>
               <th style="width:52px;text-align:right;">Total</th>
@@ -1571,46 +1568,46 @@ p { line-height: 1.5; }
           </thead>
           <tbody>
             <tr>
-              <td style="color:var(--text-2);font-size:12px;">Seg</td>
-              <td><input type="text" id="dest-0" placeholder="Destino" oninput="calcTotal(this)"></td>
-              <td><input type="number" id="ini-0" placeholder="0" oninput="calcTotal(this)" data-row="0"></td>
-              <td><input type="number" id="fin-0" placeholder="0" oninput="calcTotal(this)" data-row="0"></td>
-              <td class="day-total" id="tot-0">—</td>
+              <td style="color:var(--text-2);font-size:12px;vertical-align:top;padding-top:10px;">Seg</td>
+              <td><textarea id="dest-0" rows="2" oninput="calcTotal(this)" placeholder="Destino / clientes visitados" style="width:100%;padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);font-size:12px;font-family:var(--font);color:var(--text);outline:none;resize:vertical;min-height:38px;"></textarea></td>
+              <td style="vertical-align:top;padding-top:8px;"><input type="number" id="ini-0" placeholder="0" oninput="calcTotal(this)" data-row="0"></td>
+              <td style="vertical-align:top;padding-top:8px;"><input type="number" id="fin-0" placeholder="0" oninput="calcTotal(this)" data-row="0"></td>
+              <td class="day-total" id="tot-0" style="vertical-align:top;padding-top:10px;">—</td>
             </tr>
             <tr>
-              <td style="color:var(--text-2);font-size:12px;">Ter</td>
-              <td><input type="text" id="dest-1" placeholder="Destino" oninput="calcTotal(this)"></td>
-              <td><input type="number" id="ini-1" placeholder="0" oninput="calcTotal(this)" data-row="1"></td>
-              <td><input type="number" id="fin-1" placeholder="0" oninput="calcTotal(this)" data-row="1"></td>
-              <td class="day-total" id="tot-1">—</td>
+              <td style="color:var(--text-2);font-size:12px;vertical-align:top;padding-top:10px;">Ter</td>
+              <td><textarea id="dest-1" rows="2" oninput="calcTotal(this)" placeholder="Destino / clientes visitados" style="width:100%;padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);font-size:12px;font-family:var(--font);color:var(--text);outline:none;resize:vertical;min-height:38px;"></textarea></td>
+              <td style="vertical-align:top;padding-top:8px;"><input type="number" id="ini-1" placeholder="0" oninput="calcTotal(this)" data-row="1"></td>
+              <td style="vertical-align:top;padding-top:8px;"><input type="number" id="fin-1" placeholder="0" oninput="calcTotal(this)" data-row="1"></td>
+              <td class="day-total" id="tot-1" style="vertical-align:top;padding-top:10px;">—</td>
             </tr>
             <tr>
-              <td style="color:var(--text-2);font-size:12px;">Qua</td>
-              <td><input type="text" id="dest-2" placeholder="Destino" oninput="calcTotal(this)"></td>
-              <td><input type="number" id="ini-2" placeholder="0" oninput="calcTotal(this)" data-row="2"></td>
-              <td><input type="number" id="fin-2" placeholder="0" oninput="calcTotal(this)" data-row="2"></td>
-              <td class="day-total" id="tot-2">—</td>
+              <td style="color:var(--text-2);font-size:12px;vertical-align:top;padding-top:10px;">Qua</td>
+              <td><textarea id="dest-2" rows="2" oninput="calcTotal(this)" placeholder="Destino / clientes visitados" style="width:100%;padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);font-size:12px;font-family:var(--font);color:var(--text);outline:none;resize:vertical;min-height:38px;"></textarea></td>
+              <td style="vertical-align:top;padding-top:8px;"><input type="number" id="ini-2" placeholder="0" oninput="calcTotal(this)" data-row="2"></td>
+              <td style="vertical-align:top;padding-top:8px;"><input type="number" id="fin-2" placeholder="0" oninput="calcTotal(this)" data-row="2"></td>
+              <td class="day-total" id="tot-2" style="vertical-align:top;padding-top:10px;">—</td>
             </tr>
             <tr>
-              <td style="color:var(--text-2);font-size:12px;">Qui</td>
-              <td><input type="text" id="dest-3" placeholder="Destino" oninput="calcTotal(this)"></td>
-              <td><input type="number" id="ini-3" placeholder="0" oninput="calcTotal(this)" data-row="3"></td>
-              <td><input type="number" id="fin-3" placeholder="0" oninput="calcTotal(this)" data-row="3"></td>
-              <td class="day-total" id="tot-3">—</td>
+              <td style="color:var(--text-2);font-size:12px;vertical-align:top;padding-top:10px;">Qui</td>
+              <td><textarea id="dest-3" rows="2" oninput="calcTotal(this)" placeholder="Destino / clientes visitados" style="width:100%;padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);font-size:12px;font-family:var(--font);color:var(--text);outline:none;resize:vertical;min-height:38px;"></textarea></td>
+              <td style="vertical-align:top;padding-top:8px;"><input type="number" id="ini-3" placeholder="0" oninput="calcTotal(this)" data-row="3"></td>
+              <td style="vertical-align:top;padding-top:8px;"><input type="number" id="fin-3" placeholder="0" oninput="calcTotal(this)" data-row="3"></td>
+              <td class="day-total" id="tot-3" style="vertical-align:top;padding-top:10px;">—</td>
             </tr>
             <tr>
-              <td style="color:var(--text-2);font-size:12px;">Sex</td>
-              <td><input type="text" id="dest-4" placeholder="Destino" oninput="calcTotal(this)"></td>
-              <td><input type="number" id="ini-4" placeholder="0" oninput="calcTotal(this)" data-row="4"></td>
-              <td><input type="number" id="fin-4" placeholder="0" oninput="calcTotal(this)" data-row="4"></td>
-              <td class="day-total" id="tot-4">—</td>
+              <td style="color:var(--text-2);font-size:12px;vertical-align:top;padding-top:10px;">Sex</td>
+              <td><textarea id="dest-4" rows="2" oninput="calcTotal(this)" placeholder="Destino / clientes visitados" style="width:100%;padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);font-size:12px;font-family:var(--font);color:var(--text);outline:none;resize:vertical;min-height:38px;"></textarea></td>
+              <td style="vertical-align:top;padding-top:8px;"><input type="number" id="ini-4" placeholder="0" oninput="calcTotal(this)" data-row="4"></td>
+              <td style="vertical-align:top;padding-top:8px;"><input type="number" id="fin-4" placeholder="0" oninput="calcTotal(this)" data-row="4"></td>
+              <td class="day-total" id="tot-4" style="vertical-align:top;padding-top:10px;">—</td>
             </tr>
             <tr>
-              <td style="color:var(--text-2);font-size:12px;">Sáb</td>
-              <td><input type="text" id="dest-5" placeholder="Destino" oninput="calcTotal(this)"></td>
-              <td><input type="number" id="ini-5" placeholder="0" oninput="calcTotal(this)" data-row="5"></td>
-              <td><input type="number" id="fin-5" placeholder="0" oninput="calcTotal(this)" data-row="5"></td>
-              <td class="day-total" id="tot-5">—</td>
+              <td style="color:var(--text-2);font-size:12px;vertical-align:top;padding-top:10px;">Sáb</td>
+              <td><textarea id="dest-5" rows="2" oninput="calcTotal(this)" placeholder="Destino / clientes visitados" style="width:100%;padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);font-size:12px;font-family:var(--font);color:var(--text);outline:none;resize:vertical;min-height:38px;"></textarea></td>
+              <td style="vertical-align:top;padding-top:8px;"><input type="number" id="ini-5" placeholder="0" oninput="calcTotal(this)" data-row="5"></td>
+              <td style="vertical-align:top;padding-top:8px;"><input type="number" id="fin-5" placeholder="0" oninput="calcTotal(this)" data-row="5"></td>
+              <td class="day-total" id="tot-5" style="vertical-align:top;padding-top:10px;">—</td>
             </tr>
           </tbody>
         </table>
@@ -1761,92 +1758,278 @@ p { line-height: 1.5; }
     <span></span>
   </div>
   <div class="scroll-content">
-    <div class="section-label">Motor e fluidos</div>
+    <p style="font-size:12px;color:var(--text-2);margin-bottom:14px;padding:10px 14px;background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:var(--radius);"><strong>C</strong> = Conforme &nbsp;·&nbsp; <strong>NC</strong> = Não Conforme &nbsp;·&nbsp; <strong>NA</strong> = Não Avaliado</p>
+
+    <div class="section-label">Freios</div>
     <div class="card">
       <div class="card-body">
         <div class="check-item">
-          <span class="check-item-label">Nível do óleo</span>
+          <span class="check-item-label">Freio de pé</span>
           <div class="check-buttons">
-            <button class="check-btn" onclick="toggleChk(this,'ok')">OK</button>
-            <button class="check-btn" onclick="toggleChk(this,'nok')">Atenção</button>
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
           </div>
         </div>
         <div class="check-item">
-          <span class="check-item-label">Nível da água / arrefec.</span>
+          <span class="check-item-label">Freio de estacionamento</span>
           <div class="check-buttons">
-            <button class="check-btn" onclick="toggleChk(this,'ok')">OK</button>
-            <button class="check-btn" onclick="toggleChk(this,'nok')">Atenção</button>
-          </div>
-        </div>
-        <div class="check-item">
-          <span class="check-item-label">Nível do óleo hidráulico</span>
-          <div class="check-buttons">
-            <button class="check-btn" onclick="toggleChk(this,'ok')">OK</button>
-            <button class="check-btn" onclick="toggleChk(this,'nok')">Atenção</button>
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
           </div>
         </div>
       </div>
     </div>
-    <div class="section-label">Pneus</div>
+    <div class="section-label">Motor e partida</div>
     <div class="card">
       <div class="card-body">
         <div class="check-item">
-          <span class="check-item-label">Calibragem (4 rodas + step)</span>
+          <span class="check-item-label">Motor de partida</span>
           <div class="check-buttons">
-            <button class="check-btn" onclick="toggleChk(this,'ok')">OK</button>
-            <button class="check-btn" onclick="toggleChk(this,'nok')">Atenção</button>
-          </div>
-        </div>
-        <div class="check-item">
-          <span class="check-item-label">Desgaste / vida útil</span>
-          <div class="check-buttons">
-            <button class="check-btn" onclick="toggleChk(this,'ok')">OK</button>
-            <button class="check-btn" onclick="toggleChk(this,'nok')">Atenção</button>
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
           </div>
         </div>
       </div>
     </div>
-    <div class="section-label">Luzes e elétrica</div>
+    <div class="section-label">Limpeza e visibilidade</div>
     <div class="card">
       <div class="card-body">
         <div class="check-item">
-          <span class="check-item-label">Faróis dianteiros</span>
+          <span class="check-item-label">Limpador de para brisa</span>
           <div class="check-buttons">
-            <button class="check-btn" onclick="toggleChk(this,'ok')">OK</button>
-            <button class="check-btn" onclick="toggleChk(this,'nok')">Atenção</button>
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
           </div>
         </div>
         <div class="check-item">
-          <span class="check-item-label">Lanternas traseiras</span>
+          <span class="check-item-label">Lavador de para brisa</span>
           <div class="check-buttons">
-            <button class="check-btn" onclick="toggleChk(this,'ok')">OK</button>
-            <button class="check-btn" onclick="toggleChk(this,'nok')">Atenção</button>
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
           </div>
         </div>
         <div class="check-item">
-          <span class="check-item-label">Setas (4 cantos)</span>
+          <span class="check-item-label">Vidros</span>
           <div class="check-buttons">
-            <button class="check-btn" onclick="toggleChk(this,'ok')">OK</button>
-            <button class="check-btn" onclick="toggleChk(this,'nok')">Atenção</button>
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
           </div>
         </div>
       </div>
     </div>
-    <div class="section-label">Documentação</div>
+    <div class="section-label">Iluminação e sinalização</div>
     <div class="card">
       <div class="card-body">
         <div class="check-item">
-          <span class="check-item-label">CRLV em dia</span>
+          <span class="check-item-label">Buzina</span>
           <div class="check-buttons">
-            <button class="check-btn" onclick="toggleChk(this,'ok')">OK</button>
-            <button class="check-btn" onclick="toggleChk(this,'nok')">Atenção</button>
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
           </div>
         </div>
         <div class="check-item">
-          <span class="check-item-label">Seguro vigente</span>
+          <span class="check-item-label">Faróis</span>
           <div class="check-buttons">
-            <button class="check-btn" onclick="toggleChk(this,'ok')">OK</button>
-            <button class="check-btn" onclick="toggleChk(this,'nok')">Atenção</button>
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
+          </div>
+        </div>
+        <div class="check-item">
+          <span class="check-item-label">Lanternas dianteiras (seta)</span>
+          <div class="check-buttons">
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
+          </div>
+        </div>
+        <div class="check-item">
+          <span class="check-item-label">Lanternas traseiras (seta)</span>
+          <div class="check-buttons">
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
+          </div>
+        </div>
+        <div class="check-item">
+          <span class="check-item-label">Luz de freio</span>
+          <div class="check-buttons">
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
+          </div>
+        </div>
+        <div class="check-item">
+          <span class="check-item-label">Luz de ré</span>
+          <div class="check-buttons">
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="section-label">Segurança</div>
+    <div class="card">
+      <div class="card-body">
+        <div class="check-item">
+          <span class="check-item-label">Triângulo de advertência</span>
+          <div class="check-buttons">
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
+          </div>
+        </div>
+        <div class="check-item">
+          <span class="check-item-label">Extintor de segurança</span>
+          <div class="check-buttons">
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
+          </div>
+        </div>
+        <div class="check-item">
+          <span class="check-item-label">Espelhos retrovisores</span>
+          <div class="check-buttons">
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
+          </div>
+        </div>
+        <div class="check-item">
+          <span class="check-item-label">Cinto de segurança</span>
+          <div class="check-buttons">
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="section-label">Painel e elétrica</div>
+    <div class="card">
+      <div class="card-body">
+        <div class="check-item">
+          <span class="check-item-label">Indicadores de painel</span>
+          <div class="check-buttons">
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="section-label">Pneus e rodas</div>
+    <div class="card">
+      <div class="card-body">
+        <div class="check-item">
+          <span class="check-item-label">Condições dos Pneus</span>
+          <div class="check-buttons">
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
+          </div>
+        </div>
+        <div class="check-item">
+          <span class="check-item-label">Pneu estepe</span>
+          <div class="check-buttons">
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="section-label">Acessórios de emergência</div>
+    <div class="card">
+      <div class="card-body">
+        <div class="check-item">
+          <span class="check-item-label">Macaco</span>
+          <div class="check-buttons">
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
+          </div>
+        </div>
+        <div class="check-item">
+          <span class="check-item-label">Chave de roda</span>
+          <div class="check-buttons">
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="section-label">Fluidos</div>
+    <div class="card">
+      <div class="card-body">
+        <div class="check-item">
+          <span class="check-item-label">Nível de óleo</span>
+          <div class="check-buttons">
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
+          </div>
+        </div>
+        <div class="check-item">
+          <span class="check-item-label">Nível fluido de freio</span>
+          <div class="check-buttons">
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
+          </div>
+        </div>
+        <div class="check-item">
+          <span class="check-item-label">Nível de água</span>
+          <div class="check-buttons">
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="section-label">Estrutura e conservação</div>
+    <div class="card">
+      <div class="card-body">
+        <div class="check-item">
+          <span class="check-item-label">Ruído Interno</span>
+          <div class="check-buttons">
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
+          </div>
+        </div>
+        <div class="check-item">
+          <span class="check-item-label">Lataria</span>
+          <div class="check-buttons">
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
+          </div>
+        </div>
+        <div class="check-item">
+          <span class="check-item-label">Portas</span>
+          <div class="check-buttons">
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
+          </div>
+        </div>
+        <div class="check-item">
+          <span class="check-item-label">Limpeza Geral (interna/externa)</span>
+          <div class="check-buttons">
+            <button class="check-btn" onclick="toggleChk(this,'ok')">C</button>
+            <button class="check-btn" onclick="toggleChk(this,'nok')">NC</button>
+            <button class="check-btn na-btn" onclick="toggleChk(this,'na')">NA</button>
           </div>
         </div>
       </div>
