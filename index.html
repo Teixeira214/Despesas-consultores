@@ -35,12 +35,12 @@
   // CONFIGURAÇÃO FIREBASE
   // ═══════════════════════════════════════════════════════════
   const firebaseConfig = {
-    apiKey:            "AIzaSyAKxQZq0xXcd1I2WucyThg3W3bcARX18UM",
-    authDomain:        "despesas-consultores.firebaseapp.com",
-    projectId:         "despesas-consultores",
-    storageBucket:     "despesas-consultores.firebasestorage.app",
-    messagingSenderId: "226376691415",
-    appId:             "1:226376691415:web:0c4db470e05b075f388a92"
+    apiKey:            "AIzaSyCzNc3llDUrw_RvL3Lc0r6WyQ06_9kAAnU",
+    authDomain:        "despesas-consultores-cd55a.firebaseapp.com",
+    projectId:         "despesas-consultores-cd55a",
+    storageBucket:     "despesas-consultores-cd55a.firebasestorage.app",
+    messagingSenderId: "458438321055",
+    appId:             "1:458438321055:web:23d86d4996b6fa70f453aa"
   };
 
   const app  = initializeApp(firebaseConfig);
@@ -1655,9 +1655,7 @@ p { line-height: 1.5; }
         '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
   }
 
-  window.toggleSenha  = toggleSenha;
-  window.tentarLogin  = tentarLogin;   // expõe globalmente
-  window.fazerLogin   = tentarLogin;   // alias p/ compatibilidade retroativa
+  window.toggleSenha = toggleSenha;
 
   document.addEventListener('DOMContentLoaded', function() {
     const btn   = document.getElementById('btn-login');
