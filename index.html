@@ -573,93 +573,268 @@
     setTimeout(() => navTo('screen-home'), 600);
   };
 
-  // ═══════════════════════════════
-  // PAINEL ADMIN
-  // ═══════════════════════════════
+  // ═══════════════════════════════════════════════════════════
+  // PAINEL ADMIN — completo com lista de consultores e histórico
+  // ═══════════════════════════════════════════════════════════
+  window._adminState = { aba: 'painel', consultores: [], todasSemanas: [] };
+
   async function carregarPainelAdmin() {
     const u = window._appState.usuario;
     document.getElementById('admin-nome').textContent  = u.nome;
     document.getElementById('admin-sigla').textContent = u.sigla;
 
+    setLoading(true, 'Carregando painel…');
+    try {
+      // Carrega consultores e semanas em paralelo
+      const [snapUsuarios, snapSemanas] = await Promise.all([
+        getDocs(collection(db, 'usuarios')),
+        getDocs(query(collection(db, 'semanas'), orderBy('criadoEm', 'desc')))
+      ]);
+
+      window._adminState.consultores   = snapUsuarios.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => u.perfil !== 'admin');
+      window._adminState.todasSemanas  = snapSemanas.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      renderAdminPainel();
+    } catch(e) {
+      console.error('[Admin]', e);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function renderAdminPainel() {
     const mes = new Date().getMonth();
     const ano = new Date().getFullYear();
     const nomeMes = new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
-    document.getElementById('admin-label-mes').textContent = nomeMes.charAt(0).toUpperCase() + nomeMes.slice(1) + ' — todos os consultores';
+    const labelMes = document.getElementById('admin-label-mes');
+    if (labelMes) labelMes.textContent = nomeMes.charAt(0).toUpperCase() + nomeMes.slice(1) + ' — todos os consultores';
 
-    const q = query(collection(db, 'semanas'), orderBy('criadoEm', 'desc'));
-    const snap = await getDocs(q);
-    const todas = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-
+    const todas = window._adminState.todasSemanas;
     const doMes = todas.filter(s => {
       if (!s.criadoEm) return true;
       const d = s.criadoEm.toDate ? s.criadoEm.toDate() : new Date(s.criadoEm);
       return d.getMonth() === mes && d.getFullYear() === ano;
     });
 
+    // KPIs globais
     const totalKm    = doMes.reduce((a, s) => a + (s.totalKm || 0), 0);
     const totalGeral = doMes.reduce((a, s) => a + (s.totalGeral || 0), 0);
-    document.getElementById('admin-met-km').textContent    = new Intl.NumberFormat('pt-BR').format(totalKm);
-    document.getElementById('admin-met-total').textContent = fmt(totalGeral);
-
-    const porConsultor = {};
-    doMes.forEach(s => {
-      const n = s.nomeConsultor || s.uid;
-      if (!porConsultor[n]) porConsultor[n] = { km: 0, comb: 0, total: 0 };
-      porConsultor[n].km    += s.totalKm || 0;
-      porConsultor[n].comb  += s.totalCombustivel || 0;
-      porConsultor[n].total += s.totalGeral || 0;
-    });
-
-    const tabelaEl = document.getElementById('admin-tabela-consultores');
-    tabelaEl.innerHTML = Object.entries(porConsultor).map(([nome, v]) => `
-      <div class="consultant-row">
-        <span style="font-weight:500;">${nome}</span>
-        <span class="mono">${new Intl.NumberFormat('pt-BR').format(v.km)}</span>
-        <span class="mono">${fmt(v.comb)}</span>
-        <span class="mono">${fmt(v.total)}</span>
-      </div>
-    `).join('') || '<div class="consultant-row"><span style="color:var(--text-2);font-size:13px;">Nenhum dado ainda.</span></div>';
-
+    const totalComb  = doMes.reduce((a, s) => a + (s.totalCombustivel || 0), 0);
     const aguardando = todas.filter(s => s.status === 'Enviado');
+
+    const elKm    = document.getElementById('admin-met-km');
+    const elTotal = document.getElementById('admin-met-total');
+    const elComb  = document.getElementById('admin-met-comb');
+    const elPend  = document.getElementById('admin-met-pendentes');
+    if (elKm)    elKm.textContent    = new Intl.NumberFormat('pt-BR').format(totalKm) + ' km';
+    if (elTotal) elTotal.textContent = fmt(totalGeral);
+    if (elComb)  elComb.textContent  = fmt(totalComb);
+    if (elPend)  elPend.textContent  = aguardando.length;
+
+    // Tabela de consultores
+    const consultores = window._adminState.consultores;
+    const tabelaEl = document.getElementById('admin-tabela-consultores');
+    if (tabelaEl) {
+      if (!consultores.length) {
+        tabelaEl.innerHTML = '<tr><td colspan="6" style="padding:16px;color:var(--text-2);font-size:13px;">Nenhum consultor cadastrado.</td></tr>';
+      } else {
+        tabelaEl.innerHTML = consultores.map(c => {
+          const semsConsultor = doMes.filter(s => s.uid === c.id || s.uid === c.uid);
+          const km    = semsConsultor.reduce((a, s) => a + (s.totalKm || 0), 0);
+          const comb  = semsConsultor.reduce((a, s) => a + (s.totalCombustivel || 0), 0);
+          const total = semsConsultor.reduce((a, s) => a + (s.totalGeral || 0), 0);
+          const qtd   = semsConsultor.length;
+          const pendentes = todas.filter(s => (s.uid === c.id || s.uid === c.uid) && s.status === 'Enviado').length;
+          return `<tr class="admin-tr" onclick="abrirHistoricoConsultor('${c.id}','${c.nome || c.id}')">
+            <td>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div class="avatar" style="width:32px;height:32px;font-size:12px;background:var(--surface2);">${c.sigla || '?'}</div>
+                <div>
+                  <div style="font-weight:600;font-size:14px;">${c.nome || c.id}</div>
+                  <div style="font-size:11px;color:var(--text-3);">${c.email || ''}</div>
+                </div>
+              </div>
+            </td>
+            <td class="mono">${new Intl.NumberFormat('pt-BR').format(km)} km</td>
+            <td class="mono">${fmt(comb)}</td>
+            <td class="mono">${fmt(total)}</td>
+            <td style="text-align:center;">${qtd}</td>
+            <td style="text-align:center;">${pendentes > 0 ? `<span class="badge badge-blue">${pendentes}</span>` : '<span style="color:var(--text-3);">—</span>'}</td>
+          </tr>`;
+        }).join('');
+      }
+    }
+
+    // Semanas aguardando aprovação
     const aprovEl = document.getElementById('admin-aguardando');
-    aprovEl.innerHTML = aguardando.length ? aguardando.map(s => `
-      <div class="week-item">
-        <div>
-          <div class="week-title">${s.nomeConsultor || ''} · ${s.titulo || ''}</div>
-          <div class="week-sub">${fmtKm(s.totalKm)} · ${fmt(s.totalCombustivel)}</div>
-        </div>
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
-          <span class="badge badge-blue">Enviado</span>
-          <div style="display:flex;gap:4px;">
-            <button onclick="aprovarSemana('${s.id}')" style="font-size:11px;padding:2px 8px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);border-radius:6px;cursor:pointer;font-family:var(--font);font-weight:600;">Aprovar</button>
-            <button onclick="devolverSemana('${s.id}')" style="font-size:11px;padding:2px 8px;background:var(--red-bg);color:var(--red);border:1px solid var(--red-border);border-radius:6px;cursor:pointer;font-family:var(--font);font-weight:600;">Devolver</button>
+    if (aprovEl) {
+      aprovEl.innerHTML = aguardando.length ? aguardando.map(s => `
+        <div class="week-item">
+          <div>
+            <div class="week-title">${s.nomeConsultor || ''} · ${s.titulo || ''}</div>
+            <div class="week-sub">${fmtKm(s.totalKm)} · ${fmt(s.totalCombustivel)}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <button onclick="event.stopPropagation();aprovarSemana('${s.id}')" class="btn-acao btn-aprovar">Aprovar</button>
+            <button onclick="event.stopPropagation();devolverSemana('${s.id}')" class="btn-acao btn-devolver">Devolver</button>
           </div>
         </div>
-      </div>
-    `).join('') : '<p style="padding:14px 16px;font-size:13px;color:var(--text-2);">Nenhuma semana aguardando aprovação.</p>';
+      `).join('') : '<p style="padding:14px 16px;font-size:13px;color:var(--text-2);">Nenhuma semana aguardando aprovação.</p>';
+    }
   }
 
-  // ═══════════════════════════════
-  // ADMIN — NAVEGAÇÃO ENTRE ABAS
-  // ═══════════════════════════════
-  window.adminNavTo = function(aba) {
-    const painelEl    = document.getElementById('scroll-content-admin');
-    const usuariosEl  = document.getElementById('admin-usuarios-panel');
-    const tabPainel   = document.getElementById('admin-tab-painel');
-    const tabUsuarios = document.getElementById('admin-tab-usuarios');
-    if (aba === 'usuarios') {
-      if (painelEl)    painelEl.style.display = 'none';
-      if (usuariosEl)  usuariosEl.style.display = 'block';
-      if (tabPainel)   tabPainel.classList.remove('active');
-      if (tabUsuarios) tabUsuarios.classList.add('active');
-      carregarUsuariosAdmin();
+  // ── ABA HISTÓRICO DE CONSULTOR ──────────────────────────────
+  window.abrirHistoricoConsultor = function(uid, nome) {
+    window._adminState.consultorAtivo = { uid, nome };
+    // Atualiza título
+    document.getElementById('hist-consultor-nome').textContent = nome;
+
+    const todasSemanas = window._adminState.todasSemanas;
+    const semanas = todasSemanas.filter(s => s.uid === uid);
+
+    // KPIs do consultor (geral, não só mês)
+    const totalKm    = semanas.reduce((a, s) => a + (s.totalKm || 0), 0);
+    const totalGeral = semanas.reduce((a, s) => a + (s.totalGeral || 0), 0);
+    const totalComb  = semanas.reduce((a, s) => a + (s.totalCombustivel || 0), 0);
+    document.getElementById('hist-met-km').textContent    = new Intl.NumberFormat('pt-BR').format(totalKm) + ' km';
+    document.getElementById('hist-met-total').textContent = fmt(totalGeral);
+    document.getElementById('hist-met-comb').textContent  = fmt(totalComb);
+    document.getElementById('hist-met-qtd').textContent   = semanas.length + ' semanas';
+
+    // Lista de semanas
+    const listaEl = document.getElementById('hist-lista-semanas');
+    if (!semanas.length) {
+      listaEl.innerHTML = '<tr><td colspan="5" style="padding:16px;color:var(--text-2);font-size:13px;">Nenhuma semana registrada.</td></tr>';
     } else {
-      if (painelEl)    painelEl.style.display = '';
-      if (usuariosEl)  usuariosEl.style.display = 'none';
-      if (tabPainel)   tabPainel.classList.add('active');
-      if (tabUsuarios) tabUsuarios.classList.remove('active');
+      listaEl.innerHTML = semanas.map(s => {
+        const data = s.criadoEm ? (s.criadoEm.toDate ? s.criadoEm.toDate() : new Date(s.criadoEm)).toLocaleDateString('pt-BR') : '—';
+        return `<tr class="admin-tr" onclick="verDetalhesSemanaAdmin('${s.id}')">
+          <td style="font-weight:500;">${s.titulo || '—'}</td>
+          <td>${data}</td>
+          <td class="mono">${new Intl.NumberFormat('pt-BR').format(s.totalKm || 0)} km</td>
+          <td class="mono">${fmt(s.totalGeral || 0)}</td>
+          <td style="text-align:center;"><span class="badge ${badgeStatus(s.status)}">${s.status || 'Rascunho'}</span></td>
+        </tr>`;
+      }).join('');
+    }
+
+    adminNavTo('historico');
+  };
+
+  window.verDetalhesSemanaAdmin = async function(semanaId) {
+    setLoading(true, 'Carregando semana…');
+    try {
+      const [snapSemana, snapDespesas] = await Promise.all([
+        getDoc(doc(db, 'semanas', semanaId)),
+        getDocs(query(collection(db, 'despesas'), where('semanaId', '==', semanaId)))
+      ]);
+      const semana   = { id: semanaId, ...snapSemana.data() };
+      const despesas = snapDespesas.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      document.getElementById('det-titulo').textContent = semana.titulo || 'Semana';
+      document.getElementById('det-consultor').textContent = semana.nomeConsultor || '—';
+      document.getElementById('det-badge').className = 'badge ' + badgeStatus(semana.status);
+      document.getElementById('det-badge').textContent = semana.status || 'Rascunho';
+      document.getElementById('det-km').textContent    = fmtKm(semana.totalKm || 0);
+      document.getElementById('det-comb').textContent  = fmt(semana.totalCombustivel || 0);
+      document.getElementById('det-total').textContent = fmt(semana.totalGeral || 0);
+
+      // Dias KM
+      const diasEl = document.getElementById('det-dias');
+      const dias = semana.diasKm || [];
+      diasEl.innerHTML = dias.filter(d => d.km > 0).map(d =>
+        `<tr><td>${d.destino || '—'}</td><td class="mono">${d.kmIni}</td><td class="mono">${d.kmFin}</td><td class="mono">${d.km} km</td></tr>`
+      ).join('') || '<tr><td colspan="4" style="color:var(--text-2);">Sem percurso registrado.</td></tr>';
+
+      // Despesas
+      const despEl = document.getElementById('det-despesas');
+      despEl.innerHTML = despesas.length ? despesas.map(d =>
+        `<tr><td>${d.tipo}</td><td>${d.dia || '—'}</td><td>${d.obs || '—'}</td><td class="mono">${fmt(d.valor)}</td></tr>`
+      ).join('') : '<tr><td colspan="4" style="color:var(--text-2);">Sem despesas.</td></tr>';
+
+      // Botões de ação
+      const acoesEl = document.getElementById('det-acoes');
+      acoesEl.innerHTML = semana.status === 'Enviado' ? `
+        <button onclick="aprovarSemanaAdmin('${semana.id}')" class="btn btn-success">✓ Aprovar semana</button>
+        <button onclick="devolverSemanaAdmin('${semana.id}')" class="btn btn-secondary" style="margin-left:8px;">↩ Devolver</button>
+      ` : `<span class="badge ${badgeStatus(semana.status)}">${semana.status || 'Rascunho'}</span>`;
+
+      adminNavTo('detalhes');
+    } finally {
+      setLoading(false);
     }
   };
+
+  window.aprovarSemanaAdmin = async function(id) {
+    await updateDoc(doc(db, 'semanas', id), { status: 'Aprovado' });
+    showToast('Semana aprovada!');
+    document.getElementById('det-badge').className = 'badge badge-green';
+    document.getElementById('det-badge').textContent = 'Aprovado';
+    document.getElementById('det-acoes').innerHTML = '<span class="badge badge-green">Aprovado</span>';
+    // Atualiza cache
+    const s = window._adminState.todasSemanas.find(x => x.id === id);
+    if (s) s.status = 'Aprovado';
+  };
+
+  window.devolverSemanaAdmin = async function(id) {
+    await updateDoc(doc(db, 'semanas', id), { status: 'Devolvido' });
+    showToast('Semana devolvida.');
+    document.getElementById('det-badge').className = 'badge badge-red';
+    document.getElementById('det-badge').textContent = 'Devolvido';
+    document.getElementById('det-acoes').innerHTML = '<span class="badge badge-red">Devolvido</span>';
+    const s = window._adminState.todasSemanas.find(x => x.id === id);
+    if (s) s.status = 'Devolvido';
+  };
+
+  // ── ADMIN NAV ──────────────────────────────────────────────
+  window.adminNavTo = function(aba) {
+    ['painel','consultores','historico','detalhes','usuarios'].forEach(a => {
+      const el = document.getElementById('admin-panel-' + a);
+      if (el) el.style.display = 'none';
+    });
+    const target = document.getElementById('admin-panel-' + aba);
+    if (target) target.style.display = '';
+
+    document.querySelectorAll('.admin-sidenav-item').forEach(el => el.classList.remove('active'));
+    const tabEl = document.getElementById('admin-tab-' + aba);
+    if (tabEl) tabEl.classList.add('active');
+    window._adminState.aba = aba;
+
+    if (aba === 'consultores') renderAdminConsultores();
+    if (aba === 'usuarios')    carregarUsuariosAdmin();
+  };
+
+  function renderAdminConsultores() {
+    const consultores = window._adminState.consultores;
+    const todas = window._adminState.todasSemanas;
+    const el = document.getElementById('admin-cards-consultores');
+    if (!el) return;
+    if (!consultores.length) {
+      el.innerHTML = '<p style="color:var(--text-2);font-size:13px;">Nenhum consultor cadastrado.</p>';
+      return;
+    }
+    el.innerHTML = consultores.map(c => {
+      const sems  = todas.filter(s => s.uid === c.id || s.uid === c.uid);
+      const km    = sems.reduce((a, s) => a + (s.totalKm || 0), 0);
+      const total = sems.reduce((a, s) => a + (s.totalGeral || 0), 0);
+      const pend  = sems.filter(s => s.status === 'Enviado').length;
+      return `<div class="consultor-card" onclick="abrirHistoricoConsultor('${c.id}','${c.nome || c.id}')">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+          <div class="avatar" style="width:42px;height:42px;font-size:15px;background:var(--accent-soft);color:var(--text);">${c.sigla || '?'}</div>
+          <div>
+            <div style="font-weight:600;font-size:15px;">${c.nome || c.id}</div>
+            <div style="font-size:12px;color:var(--text-3);">${c.email || ''}</div>
+          </div>
+          ${pend > 0 ? `<span class="badge badge-blue" style="margin-left:auto;">${pend} pend.</span>` : ''}
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div class="mini-kpi"><div class="mini-kpi-label">KM total</div><div class="mini-kpi-value">${new Intl.NumberFormat('pt-BR').format(km)}</div></div>
+          <div class="mini-kpi"><div class="mini-kpi-label">Custo total</div><div class="mini-kpi-value">${fmt(total)}</div></div>
+        </div>
+        <div style="margin-top:10px;font-size:12px;color:var(--text-2);">${sems.length} semana(s) registrada(s) · <span style="color:var(--blue);font-weight:500;">Ver histórico →</span></div>
+      </div>`;
+    }).join('');
+  }
 
   async function carregarUsuariosAdmin() {
     const container = document.getElementById('admin-lista-usuarios');
@@ -672,17 +847,16 @@
       }
       container.innerHTML = snap.docs.map(d => {
         const u = d.data();
-        return `
-          <div class="card-row" style="align-items:center;">
-            <div style="display:flex;align-items:center;gap:10px;">
-              <div class="avatar" style="background:var(--surface2);">${u.sigla || '?'}</div>
-              <div>
-                <div style="font-size:14px;font-weight:500;">${u.nome || d.id}</div>
-                <div style="font-size:12px;color:var(--text-2);">${u.email || ''}</div>
-              </div>
+        return `<div class="card-row" style="align-items:center;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div class="avatar" style="background:var(--surface2);">${u.sigla || '?'}</div>
+            <div>
+              <div style="font-size:14px;font-weight:500;">${u.nome || d.id}</div>
+              <div style="font-size:12px;color:var(--text-2);">${u.email || ''}</div>
             </div>
-            <span class="badge ${u.perfil === 'admin' ? 'badge-blue' : 'badge-amber'}">${u.perfil || 'consultor'}</span>
-          </div>`;
+          </div>
+          <span class="badge ${u.perfil === 'admin' ? 'badge-blue' : 'badge-amber'}">${u.perfil || 'consultor'}</span>
+        </div>`;
       }).join('');
     } catch(e) {
       container.innerHTML = '<p style="padding:14px 16px;font-size:13px;color:var(--red);">Erro ao carregar usuários.</p>';
@@ -694,29 +868,19 @@
     const sigla  = (document.getElementById('nu-sigla')?.value || '').trim().toUpperCase();
     const email  = (document.getElementById('nu-email')?.value || '').trim().toLowerCase();
     const perfil = document.getElementById('nu-perfil')?.value || 'consultor';
-
     if (!nome || !sigla || !email) { showToast('Preencha todos os campos.'); return; }
-
     try {
       const q = query(collection(db, 'usuarios'), where('email', '==', email));
       const snap = await getDocs(q);
       if (!snap.empty) { showToast('Já existe um perfil com este e-mail.'); return; }
-
-      // Usa e-mail sanitizado como ID temporário (será associado ao UID no primeiro login)
       const tempId = email.replace(/[^a-z0-9]/gi, '_');
-      await setDoc(doc(db, 'usuarios', tempId), {
-        nome, sigla, email, perfil,
-        criadoEm: serverTimestamp()
-      });
+      await setDoc(doc(db, 'usuarios', tempId), { nome, sigla, email, perfil, criadoEm: serverTimestamp() });
       showToast('Perfil criado com sucesso!');
       document.getElementById('nu-nome').value  = '';
       document.getElementById('nu-sigla').value = '';
       document.getElementById('nu-email').value = '';
       carregarUsuariosAdmin();
-    } catch(e) {
-      console.error('[CriarUsuario]', e);
-      showToast('Erro: ' + (e.message || e.code));
-    }
+    } catch(e) { showToast('Erro: ' + (e.message || e.code)); }
   };
 
   window.aprovarSemana = async function(id) {
@@ -724,7 +888,6 @@
     showToast('Semana aprovada!');
     await carregarPainelAdmin();
   };
-
   window.devolverSemana = async function(id) {
     await updateDoc(doc(db, 'semanas', id), { status: 'Devolvido' });
     showToast('Semana devolvida.');
@@ -1040,13 +1203,119 @@ p { line-height: 1.5; }
 @keyframes spin { to { transform: rotate(360deg); } }
 #loading-msg { font-size: 14px; font-weight: 500; color: var(--text-2); }
 
-@media (min-width: 431px) {
-  body { align-items: center; min-height: 100vh; background: #E8E7E3; padding: 20px; }
-  .app-shell { border-radius: 24px; max-height: 90vh; min-height: unset; overflow: hidden; box-shadow: 0 4px 40px rgba(0,0,0,0.14); }
-  .screen { min-height: unset; }
-  .screen.active { max-height: 90vh; overflow: hidden; }
-  .scroll-content { overflow-y: auto; }
+/* ── BOTÕES DE AÇÃO ADMIN ── */
+.btn-acao {
+  font-size:12px;padding:4px 12px;border-radius:6px;cursor:pointer;
+  font-family:var(--font);font-weight:600;border:1px solid;
 }
+.btn-aprovar { background:var(--green-bg);color:var(--green);border-color:var(--green-border); }
+.btn-devolver { background:var(--red-bg);color:var(--red);border-color:var(--red-border); }
+
+/* ── DESKTOP ADMIN LAYOUT ── */
+@media (min-width: 431px) {
+  body { align-items: flex-start; min-height: 100vh; background: #E8E7E3; padding: 0; }
+  .app-shell { border-radius: 0; max-height: unset; min-height: 100vh; overflow: unset; box-shadow: none; max-width: 430px; }
+  .screen { min-height: unset; }
+  .screen.active { max-height: unset; overflow: unset; }
+  .scroll-content { overflow-y: auto; }
+
+  /* Admin usa layout diferente no desktop */
+  #screen-admin.active {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    grid-template-rows: 64px 1fr;
+    max-width: 100vw;
+    width: 100vw;
+    min-height: 100vh;
+    max-height: 100vh;
+    overflow: hidden;
+  }
+  #admin-topbar    { grid-column: 1 / -1; grid-row: 1; }
+  #admin-sidenav   { grid-column: 1; grid-row: 2; overflow-y: auto; }
+  #admin-main-area { grid-column: 2; grid-row: 2; overflow-y: auto; }
+}
+
+/* ── SIDENAV ── */
+#admin-sidenav {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.admin-sidenav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: var(--radius);
+  font-size: 14px; font-weight: 500; color: var(--text-2);
+  cursor: pointer; transition: all 0.12s; border: none;
+  background: none; font-family: var(--font); width: 100%; text-align: left;
+}
+.admin-sidenav-item:hover { background: var(--surface2); color: var(--text); }
+.admin-sidenav-item.active { background: var(--surface2); color: var(--text); font-weight: 600; }
+.admin-sidenav-item svg { width: 17px; height: 17px; flex-shrink: 0; }
+.admin-sidenav-divider { height: 1px; background: var(--border); margin: 8px 0; }
+
+/* ── MAIN AREA ── */
+#admin-main-area { background: #F0EFEb; padding: 28px 32px; }
+#admin-main-area .section-label { margin-top: 0; }
+
+/* ── ADMIN TABLE ── */
+.admin-table {
+  width: 100%; border-collapse: collapse;
+  background: var(--surface); border-radius: var(--radius-lg);
+  overflow: hidden; border: 1px solid var(--border);
+  margin-bottom: 24px;
+}
+.admin-table th {
+  font-size: 11px; font-weight: 600; color: var(--text-3);
+  letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 10px 16px; text-align: left;
+  background: var(--surface2); border-bottom: 1px solid var(--border);
+}
+.admin-table td { padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.admin-table tr:last-child td { border-bottom: none; }
+.admin-tr { cursor: pointer; transition: background 0.12s; }
+.admin-tr:hover td { background: var(--surface2); }
+
+/* ── KPI CARDS ── */
+.admin-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+.admin-kpi-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; }
+.admin-kpi-label { font-size: 12px; color: var(--text-2); font-weight: 500; margin-bottom: 6px; }
+.admin-kpi-value { font-size: 20px; font-weight: 700; font-family: var(--mono); letter-spacing: -0.5px; }
+
+/* ── CONSULTOR CARDS ── */
+.consultor-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 18px;
+  cursor: pointer; transition: box-shadow 0.15s, border-color 0.15s;
+}
+.consultor-card:hover { border-color: var(--text); box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+.admin-cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.mini-kpi { background: var(--surface2); border-radius: 8px; padding: 10px 12px; }
+.mini-kpi-label { font-size: 11px; color: var(--text-3); font-weight: 500; margin-bottom: 3px; }
+.mini-kpi-value { font-size: 15px; font-weight: 600; font-family: var(--mono); }
+.accent-soft { background: rgba(26,26,24,0.07); }
+--accent-soft: rgba(26,26,24,0.07);
+
+/* ── TOPBAR ADMIN DESKTOP ── */
+#admin-topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  height: 64px;
+}
+
+/* Mobile: esconde sidenav, mostra bottom nav */
+@media (max-width: 430px) {
+  #admin-sidenav { display: none; }
+  #admin-main-area { padding: 16px 20px 100px; }
+  .admin-kpis { grid-template-columns: 1fr 1fr; }
+  #admin-topbar { display: flex !important; }
+  #admin-bottom-nav { display: flex !important; }
+}
+
 </style>
 </head>
 <body>
@@ -1501,90 +1770,256 @@ p { line-height: 1.5; }
   </div>
 </div>
 
-<!-- ══════════════════════════════
-     TELA 6: ADMIN — PAINEL GERAL
-════════════════════════════════ -->
+<!-- ══════════════════════════════════════════════════════
+     TELA 6: ADMIN — DESKTOP LAYOUT
+════════════════════════════════════════════════════ -->
 <div id="screen-admin" class="screen">
-  <div class="topbar">
-    <div style="display:flex;align-items:center;gap:10px;">
-      <div class="avatar" style="background:var(--text);color:#fff;" id="admin-sigla">A</div>
+
+  <!-- TOPBAR (desktop) -->
+  <div id="admin-topbar">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div class="login-logo" style="width:36px;height:36px;border-radius:9px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:16px;height:16px;">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+        </svg>
+      </div>
       <div>
-        <p style="font-size:12px;color:var(--text-2);">Administrador</p>
-        <p style="font-size:15px;font-weight:600;" id="admin-nome">Admin</p>
+        <p style="font-size:11px;color:var(--text-3);font-weight:500;letter-spacing:0.04em;text-transform:uppercase;">Controle de Despesas</p>
+        <p style="font-size:13px;font-weight:600;" id="admin-nome">Admin</p>
       </div>
     </div>
-    <button class="btn-ghost" onclick="fazerLogout()">Sair</button>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div class="avatar" style="background:var(--text);color:#fff;" id="admin-sigla">A</div>
+      <button class="btn-ghost" onclick="fazerLogout()">Sair</button>
+    </div>
   </div>
-  <div class="scroll-content" id="scroll-content-admin">
-    <div class="metrics-grid">
-      <div class="metric-card">
-        <div class="metric-label">KM total frota</div>
-        <div class="metric-value" style="font-size:18px;" id="admin-met-km">—</div>
-      </div>
-      <div class="metric-card">
-        <div class="metric-label">Custo total</div>
-        <div class="metric-value" style="font-size:16px;" id="admin-met-total">—</div>
-      </div>
-    </div>
 
-    <div class="section-label" id="admin-label-mes">Por consultor</div>
-    <div class="card">
-      <div class="consultant-row header">
-        <span>Consultor</span>
-        <span>KM</span>
-        <span>Combust.</span>
-        <span>Total</span>
-      </div>
-      <div id="admin-tabela-consultores">
-        <div class="consultant-row"><span style="color:var(--text-2);font-size:13px;">Nenhum dado ainda.</span></div>
-      </div>
-    </div>
+  <!-- SIDENAV (desktop) -->
+  <nav id="admin-sidenav">
+    <p style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-3);padding:4px 12px 8px;">Menu</p>
+    <button class="admin-sidenav-item active" id="admin-tab-painel" onclick="adminNavTo('painel')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <rect x="3" y="12" width="6" height="9" rx="1"/><rect x="9" y="7" width="6" height="14" rx="1"/><rect x="15" y="9" width="6" height="12" rx="1"/>
+      </svg>
+      Painel geral
+    </button>
+    <button class="admin-sidenav-item" id="admin-tab-consultores" onclick="adminNavTo('consultores')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+      </svg>
+      Consultores
+    </button>
+    <button class="admin-sidenav-item" id="admin-tab-usuarios" onclick="adminNavTo('usuarios')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+      </svg>
+      Usuários
+    </button>
+    <div class="admin-sidenav-divider"></div>
+    <button class="admin-sidenav-item" onclick="fazerLogout()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+      </svg>
+      Sair
+    </button>
+  </nav>
 
-    <div class="section-label">Semanas aguardando aprovação</div>
-    <div class="card">
-      <div id="admin-aguardando">
+  <!-- MAIN AREA -->
+  <div id="admin-main-area">
+
+    <!-- ── PAINEL GERAL ── -->
+    <div id="admin-panel-painel">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+        <div>
+          <h2 style="margin-bottom:2px;">Painel geral</h2>
+          <p id="admin-label-mes" style="font-size:13px;color:var(--text-2);">Carregando...</p>
+        </div>
+      </div>
+
+      <!-- KPIs -->
+      <div class="admin-kpis">
+        <div class="admin-kpi-card">
+          <div class="admin-kpi-label">KM total frota</div>
+          <div class="admin-kpi-value" id="admin-met-km">—</div>
+        </div>
+        <div class="admin-kpi-card">
+          <div class="admin-kpi-label">Custo total</div>
+          <div class="admin-kpi-value" id="admin-met-total">—</div>
+        </div>
+        <div class="admin-kpi-card">
+          <div class="admin-kpi-label">Combustível</div>
+          <div class="admin-kpi-value" id="admin-met-comb">—</div>
+        </div>
+        <div class="admin-kpi-card" style="cursor:pointer;" onclick="adminNavTo('painel')">
+          <div class="admin-kpi-label">Aguardando aprovação</div>
+          <div class="admin-kpi-value" id="admin-met-pendentes" style="color:var(--blue);">—</div>
+        </div>
+      </div>
+
+      <!-- Tabela consultores mês -->
+      <div class="section-label">Resumo por consultor — mês atual</div>
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Consultor</th>
+            <th>KM</th>
+            <th>Combustível</th>
+            <th>Total</th>
+            <th style="text-align:center;">Semanas</th>
+            <th style="text-align:center;">Pendentes</th>
+          </tr>
+        </thead>
+        <tbody id="admin-tabela-consultores">
+          <tr><td colspan="6" style="padding:16px;color:var(--text-2);font-size:13px;">Carregando...</td></tr>
+        </tbody>
+      </table>
+
+      <!-- Aprovações pendentes -->
+      <div class="section-label">Semanas aguardando aprovação</div>
+      <div class="card" id="admin-aguardando">
         <p style="padding:14px 16px;font-size:13px;color:var(--text-2);">Nenhuma semana aguardando aprovação.</p>
       </div>
     </div>
-  </div>
-  <!-- Aba de Usuários (oculta por padrão) -->
-  <div id="admin-usuarios-panel" style="display:none;flex:1;overflow-y:auto;padding:16px 20px 100px;">
-    <div class="section-label">Gerenciar usuários</div>
-    <div class="card" id="admin-lista-usuarios">
-      <p style="padding:14px 16px;font-size:13px;color:var(--text-2);">Carregando usuários...</p>
-    </div>
-    <div class="section-label">Novo usuário</div>
-    <div class="card">
-      <div class="card-body">
-        <div class="field"><label>Nome completo</label><input type="text" id="nu-nome" placeholder="João da Silva"></div>
-        <div class="field"><label>Sigla (2–3 letras)</label><input type="text" id="nu-sigla" placeholder="JS" maxlength="3" style="text-transform:uppercase;"></div>
-        <div class="field"><label>E-mail</label><input type="email" id="nu-email" placeholder="joao@gruposupersafra.com.br"></div>
-        <div class="field"><label>Perfil</label>
-          <select id="nu-perfil">
-            <option value="consultor">Consultor</option>
-            <option value="admin">Administrador</option>
-          </select>
-        </div>
-        <p style="font-size:12px;color:var(--text-2);margin-bottom:12px;">O usuário precisa já ter conta criada no Firebase Authentication com o mesmo e-mail.</p>
-        <button class="btn btn-primary btn-full" onclick="criarPerfilUsuario()">Criar perfil de usuário</button>
+
+    <!-- ── CONSULTORES (cards) ── -->
+    <div id="admin-panel-consultores" style="display:none;">
+      <div style="margin-bottom:20px;">
+        <h2 style="margin-bottom:2px;">Consultores</h2>
+        <p style="font-size:13px;color:var(--text-2);">Clique em um consultor para ver o histórico completo de semanas.</p>
+      </div>
+      <div class="admin-cards-grid" id="admin-cards-consultores">
+        <p style="color:var(--text-2);font-size:13px;">Carregando...</p>
       </div>
     </div>
-  </div>
-  <div class="bottom-nav" id="admin-bottom-nav">
-    <div class="bnav-item active" id="admin-tab-painel" onclick="adminNavTo('painel')">
+
+    <!-- ── HISTÓRICO DO CONSULTOR ── -->
+    <div id="admin-panel-historico" style="display:none;">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+        <button class="topbar-back" onclick="adminNavTo('consultores')" style="font-size:13px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+          Consultores
+        </button>
+        <h2 id="hist-consultor-nome">—</h2>
+      </div>
+
+      <!-- KPIs do consultor -->
+      <div class="admin-kpis" style="grid-template-columns:repeat(4,1fr);">
+        <div class="admin-kpi-card"><div class="admin-kpi-label">KM total (geral)</div><div class="admin-kpi-value" id="hist-met-km">—</div></div>
+        <div class="admin-kpi-card"><div class="admin-kpi-label">Custo total</div><div class="admin-kpi-value" id="hist-met-total">—</div></div>
+        <div class="admin-kpi-card"><div class="admin-kpi-label">Combustível</div><div class="admin-kpi-value" id="hist-met-comb">—</div></div>
+        <div class="admin-kpi-card"><div class="admin-kpi-label">Semanas</div><div class="admin-kpi-value" id="hist-met-qtd">—</div></div>
+      </div>
+
+      <div class="section-label">Histórico de semanas</div>
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Período</th>
+            <th>Data</th>
+            <th>KM</th>
+            <th>Total</th>
+            <th style="text-align:center;">Status</th>
+          </tr>
+        </thead>
+        <tbody id="hist-lista-semanas"></tbody>
+      </table>
+    </div>
+
+    <!-- ── DETALHES DA SEMANA ── -->
+    <div id="admin-panel-detalhes" style="display:none;">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
+        <button class="topbar-back" onclick="adminNavTo('historico')" style="font-size:13px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+          Histórico
+        </button>
+        <h2 id="det-titulo">—</h2>
+        <span id="det-badge" class="badge badge-amber">—</span>
+        <span style="font-size:13px;color:var(--text-2);" id="det-consultor"></span>
+      </div>
+
+      <!-- KPIs semana -->
+      <div class="admin-kpis" style="grid-template-columns:repeat(3,1fr);">
+        <div class="admin-kpi-card"><div class="admin-kpi-label">KM rodado</div><div class="admin-kpi-value" id="det-km">—</div></div>
+        <div class="admin-kpi-card"><div class="admin-kpi-label">Combustível</div><div class="admin-kpi-value" id="det-comb">—</div></div>
+        <div class="admin-kpi-card"><div class="admin-kpi-label">Total geral</div><div class="admin-kpi-value" id="det-total">—</div></div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div>
+          <div class="section-label">Percurso diário (KM)</div>
+          <table class="admin-table">
+            <thead><tr><th>Destino</th><th>KM ini</th><th>KM fin</th><th>Total</th></tr></thead>
+            <tbody id="det-dias"></tbody>
+          </table>
+        </div>
+        <div>
+          <div class="section-label">Despesas</div>
+          <table class="admin-table">
+            <thead><tr><th>Tipo</th><th>Dia</th><th>Obs.</th><th>Valor</th></tr></thead>
+            <tbody id="det-despesas"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style="margin-top:16px;" id="det-acoes"></div>
+    </div>
+
+    <!-- ── USUÁRIOS ── -->
+    <div id="admin-panel-usuarios" style="display:none;">
+      <div style="margin-bottom:20px;">
+        <h2 style="margin-bottom:2px;">Usuários</h2>
+        <p style="font-size:13px;color:var(--text-2);">Gerencie os perfis de acesso ao sistema.</p>
+      </div>
+      <div class="section-label">Usuários cadastrados</div>
+      <div class="card" id="admin-lista-usuarios" style="margin-bottom:24px;">
+        <p style="padding:14px 16px;font-size:13px;color:var(--text-2);">Carregando usuários...</p>
+      </div>
+      <div class="section-label">Novo usuário</div>
+      <div class="card" style="max-width:480px;">
+        <div class="card-body">
+          <div class="field"><label>Nome completo</label><input type="text" id="nu-nome" placeholder="João da Silva"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div class="field"><label>Sigla (2–3 letras)</label><input type="text" id="nu-sigla" placeholder="JS" maxlength="3" style="text-transform:uppercase;"></div>
+            <div class="field"><label>Perfil</label>
+              <select id="nu-perfil">
+                <option value="consultor">Consultor</option>
+                <option value="admin">Administrador</option>
+              </select>
+            </div>
+          </div>
+          <div class="field"><label>E-mail</label><input type="email" id="nu-email" placeholder="joao@gruposupersafra.com.br"></div>
+          <p style="font-size:12px;color:var(--text-2);margin-bottom:12px;">O usuário precisa já ter conta criada no Firebase Authentication com o mesmo e-mail.</p>
+          <button class="btn btn-primary" onclick="criarPerfilUsuario()" style="min-width:200px;">Criar perfil de usuário</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /admin-main-area -->
+
+  <!-- Bottom nav (mobile only) -->
+  <div class="bottom-nav" id="admin-bottom-nav" style="display:none;">
+    <div class="bnav-item active" id="admin-tab-painel-mob" onclick="adminNavTo('painel')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
         <rect x="3" y="12" width="6" height="9" rx="1"/><rect x="9" y="7" width="6" height="14" rx="1"/><rect x="15" y="9" width="6" height="12" rx="1"/>
       </svg>
       Painel
     </div>
-    <div class="bnav-item" id="admin-tab-usuarios" onclick="adminNavTo('usuarios')">
+    <div class="bnav-item" onclick="adminNavTo('consultores')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+      </svg>
+      Consultores
+    </div>
+    <div class="bnav-item" onclick="adminNavTo('usuarios')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
       </svg>
       Usuários
     </div>
-  </div><!-- /screen-admin -->
+  </div>
+
+</div><!-- /screen-admin -->
 
 <div class="toast" id="toast"></div>
 
@@ -1655,7 +2090,9 @@ p { line-height: 1.5; }
         '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
   }
 
-  window.toggleSenha = toggleSenha;
+  window.toggleSenha  = toggleSenha;
+  window.tentarLogin  = tentarLogin;
+  window.fazerLogin   = tentarLogin;
 
   document.addEventListener('DOMContentLoaded', function() {
     const btn   = document.getElementById('btn-login');
