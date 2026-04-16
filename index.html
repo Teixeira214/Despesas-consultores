@@ -8,13 +8,13 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
   import {
     getAuth,
     signInWithEmailAndPassword,
     signOut,
     onAuthStateChanged
-  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
   import {
     getFirestore,
     collection,
@@ -29,7 +29,7 @@
     where,
     orderBy,
     serverTimestamp
-  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 
   // ═══════════════════════════════════════════════════════════
   // CONFIGURAÇÃO FIREBASE
@@ -71,6 +71,8 @@
     }
     window.dispatchEvent(new CustomEvent('auth-state-changed', { detail: user }));
   });
+
+// LOGIN: tratado exclusivamente pelo script clássico abaixo (evita duplicação de listeners)
 
   // ═══════════════════════════════
   // ESTADO GLOBAL
@@ -126,12 +128,44 @@
     if (user) {
       setLoading(true, 'Carregando perfil…');
       try {
-        const snap = await getDoc(doc(db, 'usuarios', user.uid));
+        // 1ª tentativa: documento pelo UID (caso normal)
+        let snap = await getDoc(doc(db, 'usuarios', user.uid));
+
+        // 2ª tentativa: documento criado com e-mail sanitizado como ID temporário
+        if (!snap.exists()) {
+          const tempId = user.email.replace(/[^a-z0-9]/gi, '_');
+          snap = await getDoc(doc(db, 'usuarios', tempId));
+
+          // Se encontrou pelo e-mail temporário, migra para UID definitivo
+          if (snap.exists()) {
+            const dados = snap.data();
+            await setDoc(doc(db, 'usuarios', user.uid), { ...dados, uid: user.uid, email: user.email });
+            await deleteDoc(doc(db, 'usuarios', tempId));
+            snap = await getDoc(doc(db, 'usuarios', user.uid));
+          }
+        }
+
+        // 3ª tentativa: query por e-mail
+        if (!snap.exists()) {
+          const q = query(collection(db, 'usuarios'), where('email', '==', user.email));
+          const qSnap = await getDocs(q);
+          if (!qSnap.empty) {
+            const dados = qSnap.docs[0].data();
+            await setDoc(doc(db, 'usuarios', user.uid), { ...dados, uid: user.uid });
+            snap = await getDoc(doc(db, 'usuarios', user.uid));
+          }
+        }
+
         if (snap.exists()) {
           window._appState.usuario = { uid: user.uid, email: user.email, ...snap.data() };
           await iniciarApp();
         } else {
           if (window.FirebaseAuth) await window.FirebaseAuth.logout();
+          const errEl = document.getElementById('login-erro');
+          if (errEl) {
+            errEl.textContent = 'Perfil não encontrado. Contate o administrador.';
+            errEl.style.display = 'block';
+          }
           navTo('screen-login');
         }
       } catch (e) {
@@ -605,6 +639,86 @@
     `).join('') : '<p style="padding:14px 16px;font-size:13px;color:var(--text-2);">Nenhuma semana aguardando aprovação.</p>';
   }
 
+  // ═══════════════════════════════
+  // ADMIN — NAVEGAÇÃO ENTRE ABAS
+  // ═══════════════════════════════
+  window.adminNavTo = function(aba) {
+    const painelEl    = document.getElementById('scroll-content-admin');
+    const usuariosEl  = document.getElementById('admin-usuarios-panel');
+    const tabPainel   = document.getElementById('admin-tab-painel');
+    const tabUsuarios = document.getElementById('admin-tab-usuarios');
+    if (aba === 'usuarios') {
+      if (painelEl)    painelEl.style.display = 'none';
+      if (usuariosEl)  usuariosEl.style.display = 'block';
+      if (tabPainel)   tabPainel.classList.remove('active');
+      if (tabUsuarios) tabUsuarios.classList.add('active');
+      carregarUsuariosAdmin();
+    } else {
+      if (painelEl)    painelEl.style.display = '';
+      if (usuariosEl)  usuariosEl.style.display = 'none';
+      if (tabPainel)   tabPainel.classList.add('active');
+      if (tabUsuarios) tabUsuarios.classList.remove('active');
+    }
+  };
+
+  async function carregarUsuariosAdmin() {
+    const container = document.getElementById('admin-lista-usuarios');
+    if (!container) return;
+    try {
+      const snap = await getDocs(collection(db, 'usuarios'));
+      if (snap.empty) {
+        container.innerHTML = '<p style="padding:14px 16px;font-size:13px;color:var(--text-2);">Nenhum usuário cadastrado.</p>';
+        return;
+      }
+      container.innerHTML = snap.docs.map(d => {
+        const u = d.data();
+        return `
+          <div class="card-row" style="align-items:center;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div class="avatar" style="background:var(--surface2);">${u.sigla || '?'}</div>
+              <div>
+                <div style="font-size:14px;font-weight:500;">${u.nome || d.id}</div>
+                <div style="font-size:12px;color:var(--text-2);">${u.email || ''}</div>
+              </div>
+            </div>
+            <span class="badge ${u.perfil === 'admin' ? 'badge-blue' : 'badge-amber'}">${u.perfil || 'consultor'}</span>
+          </div>`;
+      }).join('');
+    } catch(e) {
+      container.innerHTML = '<p style="padding:14px 16px;font-size:13px;color:var(--red);">Erro ao carregar usuários.</p>';
+    }
+  }
+
+  window.criarPerfilUsuario = async function() {
+    const nome   = (document.getElementById('nu-nome')?.value || '').trim();
+    const sigla  = (document.getElementById('nu-sigla')?.value || '').trim().toUpperCase();
+    const email  = (document.getElementById('nu-email')?.value || '').trim().toLowerCase();
+    const perfil = document.getElementById('nu-perfil')?.value || 'consultor';
+
+    if (!nome || !sigla || !email) { showToast('Preencha todos os campos.'); return; }
+
+    try {
+      const q = query(collection(db, 'usuarios'), where('email', '==', email));
+      const snap = await getDocs(q);
+      if (!snap.empty) { showToast('Já existe um perfil com este e-mail.'); return; }
+
+      // Usa e-mail sanitizado como ID temporário (será associado ao UID no primeiro login)
+      const tempId = email.replace(/[^a-z0-9]/gi, '_');
+      await setDoc(doc(db, 'usuarios', tempId), {
+        nome, sigla, email, perfil,
+        criadoEm: serverTimestamp()
+      });
+      showToast('Perfil criado com sucesso!');
+      document.getElementById('nu-nome').value  = '';
+      document.getElementById('nu-sigla').value = '';
+      document.getElementById('nu-email').value = '';
+      carregarUsuariosAdmin();
+    } catch(e) {
+      console.error('[CriarUsuario]', e);
+      showToast('Erro: ' + (e.message || e.code));
+    }
+  };
+
   window.aprovarSemana = async function(id) {
     await updateDoc(doc(db, 'semanas', id), { status: 'Aprovado' });
     showToast('Semana aprovada!');
@@ -647,6 +761,9 @@
     }
     navTo('screen-despesa');
   };
+
+// Conexão do botão: feita pelo script clássico abaixo
+
 </script>
 
 <style>
@@ -683,21 +800,38 @@ body {
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   justify-content: center;
   align-items: flex-start;
   padding: 0;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
 }
 .app-shell {
   width: 100%;
   max-width: 430px;
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--bg);
   display: flex;
   flex-direction: column;
   position: relative;
 }
-.screen { display: none; flex-direction: column; flex: 1; animation: fadeIn 0.18s ease; }
+/* Prevent iOS zoom on input focus */
+.field input, .field select, .field textarea,
+.day-grid input {
+  font-size: 16px !important;
+}
+/* Better touch targets */
+.bnav-item { min-height: 52px; }
+.btn { min-height: 46px; }
+.check-btn { min-height: 36px; min-width: 64px; }
+.week-item { min-height: 56px; }
+.card-row { min-height: 52px; }
+.topbar-back { min-height: 44px; padding: 0 4px; }
+/* Scrollable screens should fill available height */
+.screen { display: none; flex-direction: column; flex: 1; animation: fadeIn 0.18s ease; min-height: 100dvh; }
 .screen.active { display: flex; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 h1 { font-size: 26px; font-weight: 600; letter-spacing: -0.5px; }
@@ -718,13 +852,14 @@ p { line-height: 1.5; }
 .topbar-back:hover { color: var(--text); }
 .topbar-title { font-size: 15px; font-weight: 600; }
 .topbar-action { font-size: 13px; font-weight: 500; color: var(--blue); cursor: pointer; background: none; border: none; font-family: var(--font); }
-.scroll-content { flex: 1; overflow-y: auto; padding: 16px 20px 100px; }
+.scroll-content { flex: 1; overflow-y: auto; padding: 16px 20px; padding-bottom: max(100px, calc(80px + env(safe-area-inset-bottom))); -webkit-overflow-scrolling: touch; }
 .bottom-nav {
   position: sticky; bottom: 0;
   display: flex;
   background: var(--surface);
   border-top: 1px solid var(--border);
-  padding: 10px 0 max(env(safe-area-inset-bottom), 10px);
+  padding: 8px 0;
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
   z-index: 10;
 }
 .bnav-item {
@@ -907,7 +1042,8 @@ p { line-height: 1.5; }
 
 @media (min-width: 431px) {
   body { align-items: center; min-height: 100vh; background: #E8E7E3; padding: 20px; }
-  .app-shell { border-radius: 24px; max-height: 90vh; overflow: hidden; box-shadow: 0 4px 40px rgba(0,0,0,0.14); }
+  .app-shell { border-radius: 24px; max-height: 90vh; min-height: unset; overflow: hidden; box-shadow: 0 4px 40px rgba(0,0,0,0.14); }
+  .screen { min-height: unset; }
   .screen.active { max-height: 90vh; overflow: hidden; }
   .scroll-content { overflow-y: auto; }
 }
@@ -943,8 +1079,21 @@ p { line-height: 1.5; }
     </div>
     <div class="field">
       <label>Senha</label>
-      <input type="password" id="login-senha" placeholder="••••••••" autocomplete="current-password"
-        onkeydown="if(event.key==='Enter') fazerLogin()">
+      <div style="position:relative;">
+        <input type="password" id="login-senha" placeholder="••••••••" autocomplete="current-password"
+          style="padding-right:44px;"
+          onkeydown="if(event.key==='Enter') document.getElementById('btn-login').click()">
+        <button id="btn-toggle-senha" type="button"
+          style="position:absolute;right:0;top:0;bottom:0;width:44px;background:none;border:none;
+                 cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text-3);
+                 padding:0;border-radius:0 var(--radius) var(--radius) 0;"
+          aria-label="Mostrar/ocultar senha">
+          <svg id="toggle-senha-icon" width="18" height="18" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+          </svg>
+        </button>
+      </div>
     </div>
     <button id="btn-login" class="btn btn-primary btn-full" style="margin-top:8px;" >Entrar</button>
     <p style="text-align:center; font-size:12px; color:var(--text-3); margin-top:16px;">Primeiro acesso? Solicite ao administrador.</p>
@@ -1366,8 +1515,7 @@ p { line-height: 1.5; }
     </div>
     <button class="btn-ghost" onclick="fazerLogout()">Sair</button>
   </div>
-  <div class="scroll-content">
-    <div class="section-label" id="admin-label-mes">Mês atual — todos os consultores</div>
+  <div class="scroll-content" id="scroll-content-admin">
     <div class="metrics-grid">
       <div class="metric-card">
         <div class="metric-label">KM total frota</div>
@@ -1399,20 +1547,59 @@ p { line-height: 1.5; }
       </div>
     </div>
   </div>
-</div>
+  <!-- Aba de Usuários (oculta por padrão) -->
+  <div id="admin-usuarios-panel" style="display:none;flex:1;overflow-y:auto;padding:16px 20px 100px;">
+    <div class="section-label">Gerenciar usuários</div>
+    <div class="card" id="admin-lista-usuarios">
+      <p style="padding:14px 16px;font-size:13px;color:var(--text-2);">Carregando usuários...</p>
+    </div>
+    <div class="section-label">Novo usuário</div>
+    <div class="card">
+      <div class="card-body">
+        <div class="field"><label>Nome completo</label><input type="text" id="nu-nome" placeholder="João da Silva"></div>
+        <div class="field"><label>Sigla (2–3 letras)</label><input type="text" id="nu-sigla" placeholder="JS" maxlength="3" style="text-transform:uppercase;"></div>
+        <div class="field"><label>E-mail</label><input type="email" id="nu-email" placeholder="joao@gruposupersafra.com.br"></div>
+        <div class="field"><label>Perfil</label>
+          <select id="nu-perfil">
+            <option value="consultor">Consultor</option>
+            <option value="admin">Administrador</option>
+          </select>
+        </div>
+        <p style="font-size:12px;color:var(--text-2);margin-bottom:12px;">O usuário precisa já ter conta criada no Firebase Authentication com o mesmo e-mail.</p>
+        <button class="btn btn-primary btn-full" onclick="criarPerfilUsuario()">Criar perfil de usuário</button>
+      </div>
+    </div>
+  </div>
+  <div class="bottom-nav" id="admin-bottom-nav">
+    <div class="bnav-item active" id="admin-tab-painel" onclick="adminNavTo('painel')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <rect x="3" y="12" width="6" height="9" rx="1"/><rect x="9" y="7" width="6" height="14" rx="1"/><rect x="15" y="9" width="6" height="12" rx="1"/>
+      </svg>
+      Painel
+    </div>
+    <div class="bnav-item" id="admin-tab-usuarios" onclick="adminNavTo('usuarios')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+      </svg>
+      Usuários
+    </div>
+  </div><!-- /screen-admin -->
 
-<!-- TOAST -->
 <div class="toast" id="toast"></div>
 
 </div><!-- /app-shell -->
 
 <script>
-/* ══ LOGIN via addEventListener — padrão robusto (sem depender de module scope) ══ */
+/* ══════════════════════════════════════════════════════════
+   LOGIN — única fonte de verdade (script clássico)
+   Aguarda firebase-ready antes de habilitar o botão.
+   ══════════════════════════════════════════════════════════ */
 (function() {
   function traduzirErro(code) {
     const map = {
       'auth/invalid-credential':      'E-mail ou senha incorretos.',
-      'auth/invalid-email':           'E-mail inválido.',
+      'auth/invalid-email':           'Formato de e-mail inválido.',
       'auth/user-not-found':          'E-mail não cadastrado.',
       'auth/wrong-password':          'Senha incorreta.',
       'auth/too-many-requests':       'Muitas tentativas. Aguarde alguns minutos.',
@@ -1420,44 +1607,68 @@ p { line-height: 1.5; }
       'auth/user-disabled':           'Esta conta foi desativada.',
       'perfil-nao-encontrado':        'Perfil não encontrado. Contate o administrador.',
     };
-    return map[code] || 'Erro ao entrar (' + code + ').';
+    return map[code] || 'Erro ao entrar. Tente novamente.';
   }
 
   async function tentarLogin() {
-    const email  = document.getElementById('login-email').value.trim().toLowerCase();
-    const senha  = document.getElementById('login-senha').value;
-    const btnEl  = document.getElementById('btn-login');
-    const errEl  = document.getElementById('login-erro');
+    const emailEl = document.getElementById('login-email');
+    const senhaEl = document.getElementById('login-senha');
+    const btnEl   = document.getElementById('btn-login');
+    const errEl   = document.getElementById('login-erro');
+
+    const email = (emailEl.value || '').trim().toLowerCase();
+    const senha = (senhaEl.value || '');
+
+    errEl.style.display = 'none';
 
     if (!email || !senha) {
       errEl.textContent = 'Preencha e-mail e senha.';
       errEl.style.display = 'block';
       return;
     }
-    errEl.style.display = 'none';
+
     btnEl.textContent = 'Entrando…';
     btnEl.disabled = true;
 
     try {
       if (!window.FirebaseAuth) throw { code: 'auth/network-request-failed' };
       await window.FirebaseAuth.login(email, senha);
-      // Sucesso: auth-state-changed cuida do restante
+      /* Sucesso: onAuthStateChanged → auth-state-changed dispara a navegação */
     } catch (e) {
-      errEl.textContent = traduzirErro(e.code || e.message);
+      errEl.textContent = traduzirErro(e.code || e.message || '');
       errEl.style.display = 'block';
-    } finally {
       btnEl.textContent = 'Entrar';
       btnEl.disabled = false;
     }
   }
 
+  /* Toggle de visibilidade da senha */
+  function toggleSenha() {
+    const senhaEl   = document.getElementById('login-senha');
+    const iconEl    = document.getElementById('toggle-senha-icon');
+    const visible   = senhaEl.type === 'text';
+    senhaEl.type    = visible ? 'password' : 'text';
+    iconEl.innerHTML = visible
+      ? /* olho fechado */
+        '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/>'
+      : /* olho aberto */
+        '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+  }
+
+  window.toggleSenha  = toggleSenha;
+  window.tentarLogin  = tentarLogin;   // expõe globalmente
+  window.fazerLogin   = tentarLogin;   // alias p/ compatibilidade retroativa
+
   document.addEventListener('DOMContentLoaded', function() {
     const btn   = document.getElementById('btn-login');
     const senha = document.getElementById('login-senha');
+    const tog   = document.getElementById('btn-toggle-senha');
+
     if (btn)   btn.addEventListener('click', tentarLogin);
     if (senha) senha.addEventListener('keydown', function(e) {
       if (e.key === 'Enter') tentarLogin();
     });
+    if (tog)   tog.addEventListener('click', toggleSenha);
   });
 })();
 </script>
