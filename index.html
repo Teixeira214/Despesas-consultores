@@ -353,15 +353,23 @@
   // KM CALC
   // ═══════════════════════════════
   window.calcTotal = function(input) {
-    const row = input.closest('tr');
-    if (!row) return;
-    const inputs = row.querySelectorAll('input[type="number"]');
-    if (inputs.length < 2) return;
-    const ini = parseFloat(inputs[0].value) || 0;
-    const fin = parseFloat(inputs[1].value) || 0;
-    const rowIdx = input.dataset.row;
+    const rowIdx = input.dataset ? input.dataset.row : null;
+    if (rowIdx === null || rowIdx === undefined) {
+      // textarea oninput — find row from closest day-block
+      const block = input.closest('.day-block');
+      if (!block) return;
+      const row = block.dataset.row;
+      const ini = parseFloat(document.getElementById('ini-' + row)?.value) || 0;
+      const fin = parseFloat(document.getElementById('fin-' + row)?.value) || 0;
+      const totEl = document.getElementById('tot-' + row);
+      if (totEl) { const diff = fin - ini; totEl.textContent = diff > 0 ? diff + ' km' : '—'; }
+      recalcTotalKm();
+      return;
+    }
+    const ini = parseFloat(document.getElementById('ini-' + rowIdx)?.value) || 0;
+    const fin = parseFloat(document.getElementById('fin-' + rowIdx)?.value) || 0;
     const totEl = document.getElementById('tot-' + rowIdx);
-    if (totEl) totEl.textContent = fin - ini > 0 ? (fin - ini) : '—';
+    if (totEl) { const diff = fin - ini; totEl.textContent = diff > 0 ? diff + ' km' : '—'; }
     recalcTotalKm();
   };
 
@@ -557,22 +565,31 @@
   };
 
   window.enviarChecklist = async function() {
-    const id  = window._appState.semanaAtual;
+    const u   = window._appState.usuario;
     const obs = document.getElementById('chk-obs')?.value || '';
+    const mes = new Date().toISOString().slice(0, 7); // YYYY-MM
     const itens = [];
     document.querySelectorAll('.check-item').forEach(item => {
       const label = item.querySelector('.check-item-label')?.textContent || '';
       const ok    = item.querySelector('.check-btn.ok');
       const nok   = item.querySelector('.check-btn.nok');
-      const na2   = item.querySelector('.check-btn.na');
-      const na     = item.querySelector('.check-btn.na');
+      const na    = item.querySelector('.check-btn.na');
       itens.push({ label, status: ok ? 'C' : nok ? 'NC' : na ? 'NA' : 'pendente' });
     });
-    if (id) {
-      await updateDoc(doc(db, 'semanas', id), { checklist: itens, checklistObs: obs });
+    try {
+      await addDoc(collection(db, 'checklists'), {
+        uid: u.uid,
+        nomeConsultor: u.nome,
+        mes,
+        itens,
+        obs,
+        criadoEm: serverTimestamp()
+      });
+      showToast('Checklist mensal enviado!');
+      setTimeout(() => navTo('screen-home'), 600);
+    } catch(e) {
+      showToast('Erro ao salvar checklist.');
     }
-    showToast('Checklist enviado!');
-    setTimeout(() => navTo('screen-home'), 600);
   };
 
   // ═══════════════════════════════════════════════════════════
@@ -905,6 +922,136 @@
     await carregarPainelAdmin();
   };
 
+
+  // ═══════════════════════════════
+  // REVISÃO DO VEÍCULO
+  // ═══════════════════════════════
+  window._revisaoIntervalo = 5000;
+
+  window.selecionarIntervalo = function(btn, val) {
+    document.querySelectorAll('#rev-int-5000,#rev-int-10000,#rev-int-custom').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    window._revisaoIntervalo = val;
+    const cg = document.getElementById('rev-custom-group');
+    if (cg) cg.style.display = val === 0 ? 'block' : 'none';
+    calcularRevisao();
+  };
+
+  window.calcularRevisao = function() {
+    const atual   = parseFloat(document.getElementById('rev-km-atual')?.value) || 0;
+    const ultima  = parseFloat(document.getElementById('rev-km-ultima')?.value) || 0;
+    let intervalo = window._revisaoIntervalo;
+    if (intervalo === 0) intervalo = parseFloat(document.getElementById('rev-intervalo-custom')?.value) || 0;
+
+    if (!atual || !ultima || !intervalo) {
+      document.getElementById('rev-status-card').style.display = 'none';
+      return;
+    }
+
+    const proxima   = ultima + intervalo;
+    const falta     = proxima - atual;
+    const percorrido = atual - ultima;
+    const pct       = Math.min(100, Math.round((percorrido / intervalo) * 100));
+
+    document.getElementById('rev-status-card').style.display = '';
+    document.getElementById('rev-disp-atual').textContent    = new Intl.NumberFormat('pt-BR').format(atual) + ' km';
+    document.getElementById('rev-disp-ultima').textContent   = new Intl.NumberFormat('pt-BR').format(ultima) + ' km';
+    document.getElementById('rev-disp-proxima').textContent  = new Intl.NumberFormat('pt-BR').format(proxima) + ' km';
+    document.getElementById('rev-disp-falta').textContent    = falta > 0 ? new Intl.NumberFormat('pt-BR').format(falta) + ' km' : 'Revisão atrasada!';
+    document.getElementById('rev-disp-pct').textContent      = pct + '%';
+
+    const bar = document.getElementById('rev-progress-bar');
+    if (bar) {
+      bar.style.width = pct + '%';
+      bar.style.background = pct >= 100 ? 'var(--red)' : pct >= 80 ? 'var(--amber)' : 'var(--green)';
+    }
+
+    const alerta = document.getElementById('rev-alerta-box');
+    if (alerta) {
+      if (falta <= 0) {
+        alerta.style.display = '';
+        alerta.style.background = 'var(--red-bg)';
+        alerta.style.border = '1px solid var(--red-border)';
+        alerta.style.color  = 'var(--red)';
+        alerta.innerHTML = '⚠️ <strong>Revisão atrasada!</strong> O veículo ultrapassou o limite de ' + new Intl.NumberFormat('pt-BR').format(intervalo) + ' km sem revisão.';
+      } else if (falta <= intervalo * 0.1) {
+        alerta.style.display = '';
+        alerta.style.background = 'var(--amber-bg)';
+        alerta.style.border = '1px solid var(--amber-border)';
+        alerta.style.color  = 'var(--amber)';
+        alerta.innerHTML = '🔔 <strong>Revisão próxima!</strong> Faltam apenas ' + new Intl.NumberFormat('pt-BR').format(falta) + ' km para a próxima revisão.';
+      } else {
+        alerta.style.display = 'none';
+      }
+    }
+  };
+
+  window.abrirRegistroRevisao = function() {
+    const form = document.getElementById('rev-form-registro');
+    if (form) { form.style.display = form.style.display === 'none' ? '' : 'none'; }
+    // Set today as default date
+    const dataEl = document.getElementById('rev-reg-data');
+    if (dataEl && !dataEl.value) dataEl.value = new Date().toISOString().split('T')[0];
+  };
+
+  window.salvarRevisao = async function() {
+    const u     = window._appState.usuario;
+    const km    = parseFloat(document.getElementById('rev-reg-km')?.value) || 0;
+    const data  = document.getElementById('rev-reg-data')?.value || '';
+    const tipo  = document.getElementById('rev-reg-tipo')?.value || '';
+    const local = document.getElementById('rev-reg-local')?.value || '';
+    const custo = parseFloat(document.getElementById('rev-reg-custo')?.value) || 0;
+
+    if (!km || !data) { showToast('Informe o KM e a data da revisão.'); return; }
+
+    try {
+      await addDoc(collection(db, 'revisoes'), {
+        uid: u.uid,
+        nomeConsultor: u.nome,
+        km, data, tipo, local, custo,
+        criadoEm: serverTimestamp()
+      });
+      showToast('Revisão registrada!');
+      document.getElementById('rev-form-registro').style.display = 'none';
+      document.getElementById('rev-reg-km').value    = '';
+      document.getElementById('rev-reg-data').value  = '';
+      document.getElementById('rev-reg-tipo').value  = '';
+      document.getElementById('rev-reg-local').value = '';
+      document.getElementById('rev-reg-custo').value = '';
+      await carregarHistoricoRevisoes();
+    } catch(e) { showToast('Erro ao salvar revisão.'); }
+  };
+
+  async function carregarHistoricoRevisoes() {
+    const u = window._appState.usuario;
+    if (!u) return;
+    try {
+      const q = query(collection(db, 'revisoes'), where('uid', '==', u.uid), orderBy('criadoEm', 'desc'));
+      const snap = await getDocs(q);
+      const revisoes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const listaEl = document.getElementById('rev-historico-lista');
+      if (!listaEl) return;
+      if (!revisoes.length) {
+        listaEl.innerHTML = '<div class="card-row"><span style="font-size:13px;color:var(--text-2);">Nenhuma revisão registrada.</span></div>';
+        return;
+      }
+      listaEl.innerHTML = revisoes.map(r => `
+        <div class="card-row">
+          <div>
+            <div style="font-size:14px;font-weight:500;">${r.data ? new Date(r.data).toLocaleDateString('pt-BR') : '—'} · ${new Intl.NumberFormat('pt-BR').format(r.km)} km</div>
+            <div style="font-size:12px;color:var(--text-2);">${r.tipo || ''} ${r.local ? '· ' + r.local : ''}</div>
+          </div>
+          <span style="font-family:var(--mono);font-weight:600;font-size:13px;">${r.custo ? fmt(r.custo) : '—'}</span>
+        </div>
+      `).join('');
+    } catch(e) { console.warn('[Revisao]', e); }
+  }
+
+  window.irParaRevisao = async function() {
+    await carregarHistoricoRevisoes();
+    navTo('screen-revisao');
+  };
+
   // ═══════════════════════════════
   // TOAST
   // ═══════════════════════════════
@@ -920,6 +1067,10 @@
   // ═══════════════════════════════
   window.irParaSemana  = () => navTo('screen-semana');
   window.irParaDespesa = () => {
+    if (!window._appState.semanaAtual) {
+      showToast('Abra ou crie uma semana primeiro.');
+      return;
+    }
     const diaEl = document.getElementById('desp-dia');
     if (diaEl) {
       diaEl.innerHTML = `
@@ -936,35 +1087,39 @@
 
 <style>
 :root {
-  --bg: #EEF2F8;
+  --bg: #E8EDF5;
   --surface: #FFFFFF;
-  --surface2: #F4F7FB;
-  --border: rgba(0,0,0,0.09);
-  --border-strong: rgba(0,0,0,0.18);
+  --surface2: #F0F4FA;
+  --surface3: #E4EAF4;
+  --border: rgba(15,32,68,0.10);
+  --border-strong: rgba(15,32,68,0.22);
   --text: #0D1117;
-  --text-2: #4A5568;
-  --text-3: #8A96A8;
-  --green: #1B7C4A;
-  --green-bg: #E8F5EE;
-  --green-border: #A3D4B8;
-  --amber: #8A5A00;
-  --amber-bg: #FFF4DC;
-  --amber-border: #F0CC80;
-  --red: #B33030;
-  --red-bg: #FEF0F0;
-  --red-border: #F5B8B8;
-  --blue: #2563EB;
-  --blue-bg: #EBF3FD;
-  --blue-border: #A8CFEF;
-  --navy: #0F2044;
-  --navy-2: #1A3060;
-  --navy-3: #243B7A;
-  --accent: #2563EB;
+  --text-2: #3D4F6A;
+  --text-3: #7A8BA0;
+  --green: #186640;
+  --green-bg: #E4F3EC;
+  --green-border: #95CCAF;
+  --amber: #7A4F00;
+  --amber-bg: #FFF3D6;
+  --amber-border: #E8C070;
+  --red: #A02828;
+  --red-bg: #FDEEED;
+  --red-border: #EFA8A8;
+  --blue: #1D55CC;
+  --blue-bg: #E8F0FC;
+  --blue-border: #90B5EE;
+  --navy: #0C1B3A;
+  --navy-2: #142C5C;
+  --navy-3: #1E3E80;
+  --accent: #1D55CC;
+  --accent-soft: rgba(29,85,204,0.10);
   --radius: 10px;
-  --radius-lg: 14px;
+  --radius-lg: 16px;
+  --shadow-sm: 0 1px 4px rgba(12,27,58,0.08), 0 0 0 1px rgba(12,27,58,0.06);
+  --shadow-md: 0 4px 16px rgba(12,27,58,0.12), 0 1px 4px rgba(12,27,58,0.06);
   --font: 'DM Sans', sans-serif;
   --mono: 'DM Mono', monospace;
-  --sidebar-w: 240px;
+  --sidebar-w: 248px;
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body {
@@ -1051,7 +1206,8 @@ p { line-height: 1.5; }
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   overflow: hidden;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
+  box-shadow: var(--shadow-sm);
 }
 .card-body { padding: 14px 16px; }
 .card-row {
@@ -1329,6 +1485,7 @@ p { line-height: 1.5; }
   background: var(--surface); border-radius: var(--radius-lg);
   overflow: hidden; border: 1px solid var(--border);
   margin-bottom: 24px;
+  box-shadow: var(--shadow-sm);
 }
 .admin-table th {
   font-size: 11px; font-weight: 600; color: var(--text-3);
@@ -1343,7 +1500,7 @@ p { line-height: 1.5; }
 
 /* ── KPI CARDS ── */
 .admin-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
-.admin-kpi-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; }
+.admin-kpi-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; box-shadow: var(--shadow-sm); }
 .admin-kpi-label { font-size: 12px; color: var(--text-2); font-weight: 500; margin-bottom: 6px; }
 .admin-kpi-value { font-size: 20px; font-weight: 700; font-family: var(--mono); letter-spacing: -0.5px; }
 
@@ -1401,6 +1558,66 @@ p { line-height: 1.5; }
   #btn-sidebar-toggle { display: none !important; }
 }
 
+/* ── DAY BLOCK LAYOUT (destination above KM) ── */
+.day-block {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.day-block:last-child { border-bottom: none; }
+.day-block-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 8px;
+}
+.day-block-label {
+  font-size: 13px; font-weight: 600; color: var(--text-2);
+}
+.day-total-badge {
+  font-family: var(--mono); font-size: 13px; font-weight: 600;
+  color: var(--green); background: var(--green-bg);
+  border: 1px solid var(--green-border);
+  padding: 2px 9px; border-radius: 12px;
+}
+.day-dest-input {
+  width: 100%; padding: 8px 10px;
+  border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface2); font-size: 14px;
+  font-family: var(--font); color: var(--text);
+  outline: none; resize: vertical; min-height: 44px;
+  margin-bottom: 8px; transition: border-color 0.15s;
+}
+.day-dest-input:focus { border-color: var(--accent); background: var(--surface); }
+.day-block-km {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+}
+.day-km-field label {
+  font-size: 11px; font-weight: 600; color: var(--text-3);
+  letter-spacing: 0.04em; text-transform: uppercase;
+  display: block; margin-bottom: 4px;
+}
+.day-km-field input {
+  width: 100%; padding: 8px 10px;
+  border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface2); font-size: 14px;
+  font-family: var(--mono); color: var(--text);
+  outline: none; transition: border-color 0.15s;
+}
+.day-km-field input:focus { border-color: var(--accent); background: var(--surface); }
+
+/* ── IMPROVED SECTION LABEL ── */
+.section-label {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-3);
+  margin: 22px 0 8px;
+}
+
+/* ── CHECKLIST LABEL UPDATE ── */
+.checklist-monthly-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--blue-bg); color: var(--blue);
+  border: 1px solid var(--blue-border);
+  font-size: 11px; font-weight: 600; padding: 3px 9px;
+  border-radius: 12px; margin-left: 8px; letter-spacing: 0.02em;
+}
 </style>
 </head>
 <body>
@@ -1537,6 +1754,12 @@ p { line-height: 1.5; }
       </svg>
       Checklist
     </div>
+    <div class="bnav-item" onclick="irParaRevisao()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/><path d="M5.5 5.5A7 7 0 0 1 19 12"/>
+      </svg>
+      Revisão
+    </div>
   </div>
 </div>
 
@@ -1555,65 +1778,131 @@ p { line-height: 1.5; }
   <div class="scroll-content">
     <div class="section-label">Percurso em KM</div>
     <div class="card">
-      <div class="card-body" style="padding:12px 14px;">
-        <table class="day-grid">
-          <thead>
-            <tr>
-              <th style="width:44px;">Dia</th>
-              <th>Destino / Clientes visitados</th>
-              <th style="width:60px;">KM ini.</th>
-              <th style="width:60px;">KM fin.</th>
-              <th style="width:52px;text-align:right;">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td style="color:var(--text-2);font-size:12px;vertical-align:top;padding-top:10px;">Seg</td>
-              <td><textarea id="dest-0" rows="2" oninput="calcTotal(this)" placeholder="Destino / clientes visitados" style="width:100%;padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);font-size:12px;font-family:var(--font);color:var(--text);outline:none;resize:vertical;min-height:38px;"></textarea></td>
-              <td style="vertical-align:top;padding-top:8px;"><input type="number" id="ini-0" placeholder="0" oninput="calcTotal(this)" data-row="0"></td>
-              <td style="vertical-align:top;padding-top:8px;"><input type="number" id="fin-0" placeholder="0" oninput="calcTotal(this)" data-row="0"></td>
-              <td class="day-total" id="tot-0" style="vertical-align:top;padding-top:10px;">—</td>
-            </tr>
-            <tr>
-              <td style="color:var(--text-2);font-size:12px;vertical-align:top;padding-top:10px;">Ter</td>
-              <td><textarea id="dest-1" rows="2" oninput="calcTotal(this)" placeholder="Destino / clientes visitados" style="width:100%;padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);font-size:12px;font-family:var(--font);color:var(--text);outline:none;resize:vertical;min-height:38px;"></textarea></td>
-              <td style="vertical-align:top;padding-top:8px;"><input type="number" id="ini-1" placeholder="0" oninput="calcTotal(this)" data-row="1"></td>
-              <td style="vertical-align:top;padding-top:8px;"><input type="number" id="fin-1" placeholder="0" oninput="calcTotal(this)" data-row="1"></td>
-              <td class="day-total" id="tot-1" style="vertical-align:top;padding-top:10px;">—</td>
-            </tr>
-            <tr>
-              <td style="color:var(--text-2);font-size:12px;vertical-align:top;padding-top:10px;">Qua</td>
-              <td><textarea id="dest-2" rows="2" oninput="calcTotal(this)" placeholder="Destino / clientes visitados" style="width:100%;padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);font-size:12px;font-family:var(--font);color:var(--text);outline:none;resize:vertical;min-height:38px;"></textarea></td>
-              <td style="vertical-align:top;padding-top:8px;"><input type="number" id="ini-2" placeholder="0" oninput="calcTotal(this)" data-row="2"></td>
-              <td style="vertical-align:top;padding-top:8px;"><input type="number" id="fin-2" placeholder="0" oninput="calcTotal(this)" data-row="2"></td>
-              <td class="day-total" id="tot-2" style="vertical-align:top;padding-top:10px;">—</td>
-            </tr>
-            <tr>
-              <td style="color:var(--text-2);font-size:12px;vertical-align:top;padding-top:10px;">Qui</td>
-              <td><textarea id="dest-3" rows="2" oninput="calcTotal(this)" placeholder="Destino / clientes visitados" style="width:100%;padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);font-size:12px;font-family:var(--font);color:var(--text);outline:none;resize:vertical;min-height:38px;"></textarea></td>
-              <td style="vertical-align:top;padding-top:8px;"><input type="number" id="ini-3" placeholder="0" oninput="calcTotal(this)" data-row="3"></td>
-              <td style="vertical-align:top;padding-top:8px;"><input type="number" id="fin-3" placeholder="0" oninput="calcTotal(this)" data-row="3"></td>
-              <td class="day-total" id="tot-3" style="vertical-align:top;padding-top:10px;">—</td>
-            </tr>
-            <tr>
-              <td style="color:var(--text-2);font-size:12px;vertical-align:top;padding-top:10px;">Sex</td>
-              <td><textarea id="dest-4" rows="2" oninput="calcTotal(this)" placeholder="Destino / clientes visitados" style="width:100%;padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);font-size:12px;font-family:var(--font);color:var(--text);outline:none;resize:vertical;min-height:38px;"></textarea></td>
-              <td style="vertical-align:top;padding-top:8px;"><input type="number" id="ini-4" placeholder="0" oninput="calcTotal(this)" data-row="4"></td>
-              <td style="vertical-align:top;padding-top:8px;"><input type="number" id="fin-4" placeholder="0" oninput="calcTotal(this)" data-row="4"></td>
-              <td class="day-total" id="tot-4" style="vertical-align:top;padding-top:10px;">—</td>
-            </tr>
-            <tr>
-              <td style="color:var(--text-2);font-size:12px;vertical-align:top;padding-top:10px;">Sáb</td>
-              <td><textarea id="dest-5" rows="2" oninput="calcTotal(this)" placeholder="Destino / clientes visitados" style="width:100%;padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);font-size:12px;font-family:var(--font);color:var(--text);outline:none;resize:vertical;min-height:38px;"></textarea></td>
-              <td style="vertical-align:top;padding-top:8px;"><input type="number" id="ini-5" placeholder="0" oninput="calcTotal(this)" data-row="5"></td>
-              <td style="vertical-align:top;padding-top:8px;"><input type="number" id="fin-5" placeholder="0" oninput="calcTotal(this)" data-row="5"></td>
-              <td class="day-total" id="tot-5" style="vertical-align:top;padding-top:10px;">—</td>
-            </tr>
-          </tbody>
-        </table>
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 4px 0;border-top:1px solid var(--border);margin-top:4px;">
-          <span style="font-size:12px;font-weight:600;color:var(--text-2);">TOTAL KM</span>
-          <span id="km-total" style="font-family:var(--mono);font-weight:600;">0 km</span>
+      <div class="card-body" style="padding:0;">
+        <!-- Seg -->
+        <div class="day-block" data-row="0">
+          <div class="day-block-header">
+            <span class="day-block-label">Segunda-feira</span>
+            <span class="day-total-badge" id="tot-0">—</span>
+          </div>
+          <div class="day-block-dest">
+            <textarea id="dest-0" rows="2" oninput="calcTotal(this)" placeholder="Destino e clientes visitados" class="day-dest-input"></textarea>
+          </div>
+          <div class="day-block-km">
+            <div class="day-km-field">
+              <label>KM Inicial</label>
+              <input type="number" id="ini-0" placeholder="0" oninput="calcTotal(this)" data-row="0">
+            </div>
+            <div class="day-km-field">
+              <label>KM Final</label>
+              <input type="number" id="fin-0" placeholder="0" oninput="calcTotal(this)" data-row="0">
+            </div>
+          </div>
+        </div>
+        <!-- Ter -->
+        <div class="day-block" data-row="1">
+          <div class="day-block-header">
+            <span class="day-block-label">Terça-feira</span>
+            <span class="day-total-badge" id="tot-1">—</span>
+          </div>
+          <div class="day-block-dest">
+            <textarea id="dest-1" rows="2" oninput="calcTotal(this)" placeholder="Destino e clientes visitados" class="day-dest-input"></textarea>
+          </div>
+          <div class="day-block-km">
+            <div class="day-km-field">
+              <label>KM Inicial</label>
+              <input type="number" id="ini-1" placeholder="0" oninput="calcTotal(this)" data-row="1">
+            </div>
+            <div class="day-km-field">
+              <label>KM Final</label>
+              <input type="number" id="fin-1" placeholder="0" oninput="calcTotal(this)" data-row="1">
+            </div>
+          </div>
+        </div>
+        <!-- Qua -->
+        <div class="day-block" data-row="2">
+          <div class="day-block-header">
+            <span class="day-block-label">Quarta-feira</span>
+            <span class="day-total-badge" id="tot-2">—</span>
+          </div>
+          <div class="day-block-dest">
+            <textarea id="dest-2" rows="2" oninput="calcTotal(this)" placeholder="Destino e clientes visitados" class="day-dest-input"></textarea>
+          </div>
+          <div class="day-block-km">
+            <div class="day-km-field">
+              <label>KM Inicial</label>
+              <input type="number" id="ini-2" placeholder="0" oninput="calcTotal(this)" data-row="2">
+            </div>
+            <div class="day-km-field">
+              <label>KM Final</label>
+              <input type="number" id="fin-2" placeholder="0" oninput="calcTotal(this)" data-row="2">
+            </div>
+          </div>
+        </div>
+        <!-- Qui -->
+        <div class="day-block" data-row="3">
+          <div class="day-block-header">
+            <span class="day-block-label">Quinta-feira</span>
+            <span class="day-total-badge" id="tot-3">—</span>
+          </div>
+          <div class="day-block-dest">
+            <textarea id="dest-3" rows="2" oninput="calcTotal(this)" placeholder="Destino e clientes visitados" class="day-dest-input"></textarea>
+          </div>
+          <div class="day-block-km">
+            <div class="day-km-field">
+              <label>KM Inicial</label>
+              <input type="number" id="ini-3" placeholder="0" oninput="calcTotal(this)" data-row="3">
+            </div>
+            <div class="day-km-field">
+              <label>KM Final</label>
+              <input type="number" id="fin-3" placeholder="0" oninput="calcTotal(this)" data-row="3">
+            </div>
+          </div>
+        </div>
+        <!-- Sex -->
+        <div class="day-block" data-row="4">
+          <div class="day-block-header">
+            <span class="day-block-label">Sexta-feira</span>
+            <span class="day-total-badge" id="tot-4">—</span>
+          </div>
+          <div class="day-block-dest">
+            <textarea id="dest-4" rows="2" oninput="calcTotal(this)" placeholder="Destino e clientes visitados" class="day-dest-input"></textarea>
+          </div>
+          <div class="day-block-km">
+            <div class="day-km-field">
+              <label>KM Inicial</label>
+              <input type="number" id="ini-4" placeholder="0" oninput="calcTotal(this)" data-row="4">
+            </div>
+            <div class="day-km-field">
+              <label>KM Final</label>
+              <input type="number" id="fin-4" placeholder="0" oninput="calcTotal(this)" data-row="4">
+            </div>
+          </div>
+        </div>
+        <!-- Sáb -->
+        <div class="day-block" data-row="5">
+          <div class="day-block-header">
+            <span class="day-block-label">Sábado</span>
+            <span class="day-total-badge" id="tot-5">—</span>
+          </div>
+          <div class="day-block-dest">
+            <textarea id="dest-5" rows="2" oninput="calcTotal(this)" placeholder="Destino e clientes visitados" class="day-dest-input"></textarea>
+          </div>
+          <div class="day-block-km">
+            <div class="day-km-field">
+              <label>KM Inicial</label>
+              <input type="number" id="ini-5" placeholder="0" oninput="calcTotal(this)" data-row="5">
+            </div>
+            <div class="day-km-field">
+              <label>KM Final</label>
+              <input type="number" id="fin-5" placeholder="0" oninput="calcTotal(this)" data-row="5">
+            </div>
+          </div>
+        </div>
+        <!-- Total -->
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-top:2px solid var(--border);background:var(--surface2);">
+          <span style="font-size:13px;font-weight:700;color:var(--text-2);letter-spacing:0.04em;text-transform:uppercase;">Total KM</span>
+          <span id="km-total" style="font-family:var(--mono);font-weight:700;font-size:16px;color:var(--text);">0 km</span>
         </div>
       </div>
     </div>
@@ -1662,6 +1951,12 @@ p { line-height: 1.5; }
         <circle cx="12" cy="12" r="8"/><path d="M9 12l2 2 4-4"/>
       </svg>
       Checklist
+    </div>
+    <div class="bnav-item" onclick="irParaRevisao()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/><path d="M5.5 5.5A7 7 0 0 1 19 12"/>
+      </svg>
+      Revisão
     </div>
   </div>
 </div>
@@ -1754,11 +2049,11 @@ p { line-height: 1.5; }
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
       Voltar
     </button>
-    <span class="topbar-title">Checklist do veículo</span>
+    <span class="topbar-title">Checklist do veículo <span class="checklist-monthly-badge">Mensal</span></span>
     <span></span>
   </div>
   <div class="scroll-content">
-    <p style="font-size:12px;color:var(--text-2);margin-bottom:14px;padding:10px 14px;background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:var(--radius);"><strong>C</strong> = Conforme &nbsp;·&nbsp; <strong>NC</strong> = Não Conforme &nbsp;·&nbsp; <strong>NA</strong> = Não Avaliado</p>
+    <p style="font-size:12px;color:var(--text-2);margin-bottom:14px;padding:10px 14px;background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:var(--radius);">📅 Checklist <strong>mensal</strong> do veículo &nbsp;·&nbsp; <strong>C</strong> = Conforme &nbsp;·&nbsp; <strong>NC</strong> = Não Conforme &nbsp;·&nbsp; <strong>NA</strong> = Não Avaliado</p>
 
     <div class="section-label">Freios</div>
     <div class="card">
@@ -2062,8 +2357,143 @@ p { line-height: 1.5; }
   </div>
 </div>
 
+<!-- ══════════════════════════════
+     TELA 6: REVISÃO DO VEÍCULO
+════════════════════════════════ -->
+<div id="screen-revisao" class="screen">
+  <div class="topbar">
+    <button class="topbar-back" onclick="navTo('screen-home')">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+      Voltar
+    </button>
+    <span class="topbar-title">Revisão do veículo</span>
+    <span></span>
+  </div>
+  <div class="scroll-content">
+
+    <!-- Configuração da revisão -->
+    <div class="section-label">Configurar próxima revisão</div>
+    <div class="card">
+      <div class="card-body">
+        <div class="field">
+          <label>KM atual do veículo (odômetro)</label>
+          <input type="number" id="rev-km-atual" placeholder="Ex: 48.500" oninput="calcularRevisao()">
+        </div>
+        <div class="field">
+          <label>KM da última revisão</label>
+          <input type="number" id="rev-km-ultima" placeholder="Ex: 40.000" oninput="calcularRevisao()">
+        </div>
+        <div class="field">
+          <label>Intervalo de revisão</label>
+          <div style="display:flex;gap:8px;margin-top:2px;">
+            <button class="tipo-pill selected" id="rev-int-5000" onclick="selecionarIntervalo(this, 5000)">5.000 km</button>
+            <button class="tipo-pill" id="rev-int-10000" onclick="selecionarIntervalo(this, 10000)">10.000 km</button>
+            <button class="tipo-pill" id="rev-int-custom" onclick="selecionarIntervalo(this, 0)">Personalizado</button>
+          </div>
+        </div>
+        <div class="field" id="rev-custom-group" style="display:none;">
+          <label>Intervalo personalizado (km)</label>
+          <input type="number" id="rev-intervalo-custom" placeholder="Ex: 7.500" oninput="calcularRevisao()">
+        </div>
+      </div>
+    </div>
+
+    <!-- Status da revisão -->
+    <div id="rev-status-card" style="display:none;">
+      <div class="section-label">Status</div>
+      <div class="card" id="rev-status-inner">
+        <div class="card-body">
+          <div id="rev-alerta-box" style="display:none;padding:14px;border-radius:var(--radius);margin-bottom:14px;font-size:14px;font-weight:500;"></div>
+          <div class="stat-row"><span class="stat-label">KM atual</span><span class="stat-value" id="rev-disp-atual">—</span></div>
+          <div class="stat-row"><span class="stat-label">Última revisão em</span><span class="stat-value" id="rev-disp-ultima">—</span></div>
+          <div class="stat-row"><span class="stat-label">Próxima revisão em</span><span class="stat-value" id="rev-disp-proxima" style="color:var(--blue);">—</span></div>
+          <div class="stat-row"><span class="stat-label">KM até a revisão</span><span class="stat-value" id="rev-disp-falta">—</span></div>
+          <div class="stat-row" style="border-bottom:none;">
+            <span class="stat-label">Progresso</span>
+            <span class="stat-value" id="rev-disp-pct">—</span>
+          </div>
+          <!-- Barra de progresso -->
+          <div style="margin-top:12px;background:var(--surface3);border-radius:999px;height:10px;overflow:hidden;">
+            <div id="rev-progress-bar" style="height:100%;border-radius:999px;background:var(--green);width:0%;transition:width 0.5s ease;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Histórico de revisões -->
+    <div class="section-label">Histórico de revisões</div>
+    <div class="card">
+      <div id="rev-historico-lista">
+        <div class="card-row"><span style="font-size:13px;color:var(--text-2);">Nenhuma revisão registrada.</span></div>
+      </div>
+      <div class="card-row" style="cursor:pointer;" onclick="abrirRegistroRevisao()">
+        <span style="font-size:13px;color:var(--blue);font-weight:500;">+ Registrar revisão realizada</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
+      </div>
+    </div>
+
+    <!-- Formulário de registro (oculto) -->
+    <div id="rev-form-registro" style="display:none;">
+      <div class="section-label">Registrar revisão</div>
+      <div class="card">
+        <div class="card-body">
+          <div class="field">
+            <label>KM na revisão</label>
+            <input type="number" id="rev-reg-km" placeholder="Ex: 48.500">
+          </div>
+          <div class="field">
+            <label>Data da revisão</label>
+            <input type="date" id="rev-reg-data">
+          </div>
+          <div class="field">
+            <label>Tipo de serviço</label>
+            <input type="text" id="rev-reg-tipo" placeholder="Ex: Troca de óleo, filtros, revisão completa...">
+          </div>
+          <div class="field">
+            <label>Oficina / Local</label>
+            <input type="text" id="rev-reg-local" placeholder="Ex: Concessionária Ford — São Paulo">
+          </div>
+          <div class="field">
+            <label>Custo (R$)</label>
+            <input type="number" step="0.01" id="rev-reg-custo" placeholder="0,00">
+          </div>
+          <button class="btn btn-success btn-full" onclick="salvarRevisao()">Salvar revisão</button>
+          <button class="btn btn-secondary btn-full" onclick="document.getElementById('rev-form-registro').style.display='none'" style="margin-bottom:0;">Cancelar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom-nav">
+    <div class="bnav-item" onclick="navTo('screen-home')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <rect x="3" y="12" width="6" height="9" rx="1"/><rect x="9" y="7" width="6" height="14" rx="1"/><rect x="15" y="9" width="6" height="12" rx="1"/>
+      </svg>
+      Resumo
+    </div>
+    <div class="bnav-item" onclick="navTo('screen-semana')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <rect x="3" y="4" width="18" height="16" rx="2"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="17" y2="13"/><line x1="7" y1="17" x2="12" y2="17"/>
+      </svg>
+      Semana
+    </div>
+    <div class="bnav-item" onclick="navTo('screen-checklist')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <circle cx="12" cy="12" r="8"/><path d="M9 12l2 2 4-4"/>
+      </svg>
+      Checklist
+    </div>
+    <div class="bnav-item active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/><path d="M5.5 5.5A7 7 0 0 1 19 12"/>
+      </svg>
+      Revisão
+    </div>
+  </div>
+</div>
+
 <!-- ══════════════════════════════════════════════════════
-     TELA 6: ADMIN — DESKTOP LAYOUT
+     TELA 7: ADMIN — DESKTOP LAYOUT
 ════════════════════════════════════════════════════ -->
 <div id="screen-admin" class="screen">
 
