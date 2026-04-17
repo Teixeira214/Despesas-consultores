@@ -535,12 +535,14 @@
         criadoEm: serverTimestamp()
       });
       showToast('Despesa salva!');
+      // Limpa formulário
       document.getElementById('desp-valor').value  = '';
       document.getElementById('desp-litros').value = '';
       if (document.getElementById('desp-odom'))  document.getElementById('desp-odom').value  = '';
       if (document.getElementById('desp-obs'))   document.getElementById('desp-obs').value   = '';
+      // Recarrega despesas e depois navega de volta
       await carregarDespesasSemana(id);
-      setTimeout(() => navTo('screen-semana'), 500);
+      navTo('screen-semana');
     } finally {
       if (btnSalvar) { btnSalvar.disabled = false; btnSalvar.textContent = 'Salvar despesa'; }
     }
@@ -790,10 +792,12 @@
 
       // Botões de ação
       const acoesEl = document.getElementById('det-acoes');
+      const btnExcluir = `<button onclick="excluirSemanaAdmin('${semana.id}')" class="btn btn-secondary" style="margin-left:8px;color:var(--red);border-color:var(--red-border);">🗑 Excluir semana</button>`;
       acoesEl.innerHTML = semana.status === 'Enviado' ? `
         <button onclick="aprovarSemanaAdmin('${semana.id}')" class="btn btn-success">✓ Aprovar semana</button>
         <button onclick="devolverSemanaAdmin('${semana.id}')" class="btn btn-secondary" style="margin-left:8px;">↩ Devolver</button>
-      ` : `<span class="badge ${badgeStatus(semana.status)}">${semana.status || 'Rascunho'}</span>`;
+        ${btnExcluir}
+      ` : `<span class="badge ${badgeStatus(semana.status)}">${semana.status || 'Rascunho'}</span>${btnExcluir}`;
 
       adminNavTo('detalhes');
     } finally {
@@ -806,7 +810,8 @@
     showToast('Semana aprovada!');
     document.getElementById('det-badge').className = 'badge badge-green';
     document.getElementById('det-badge').textContent = 'Aprovado';
-    document.getElementById('det-acoes').innerHTML = '<span class="badge badge-green">Aprovado</span>';
+    const btnExcluir = `<button onclick="excluirSemanaAdmin('${id}')" class="btn btn-secondary" style="margin-left:8px;color:var(--red);border-color:var(--red-border);">🗑 Excluir semana</button>`;
+    document.getElementById('det-acoes').innerHTML = `<span class="badge badge-green">Aprovado</span>${btnExcluir}`;
     // Atualiza cache
     const s = window._adminState.todasSemanas.find(x => x.id === id);
     if (s) s.status = 'Aprovado';
@@ -817,9 +822,38 @@
     showToast('Semana devolvida.');
     document.getElementById('det-badge').className = 'badge badge-red';
     document.getElementById('det-badge').textContent = 'Devolvido';
-    document.getElementById('det-acoes').innerHTML = '<span class="badge badge-red">Devolvido</span>';
+    const btnExcluir = `<button onclick="excluirSemanaAdmin('${id}')" class="btn btn-secondary" style="margin-left:8px;color:var(--red);border-color:var(--red-border);">🗑 Excluir semana</button>`;
+    document.getElementById('det-acoes').innerHTML = `<span class="badge badge-red">Devolvido</span>${btnExcluir}`;
     const s = window._adminState.todasSemanas.find(x => x.id === id);
     if (s) s.status = 'Devolvido';
+  };
+
+  window.excluirSemanaAdmin = async function(id) {
+    if (!confirm('Tem certeza que deseja excluir esta semana? Esta ação não pode ser desfeita.')) return;
+    setLoading(true, 'Excluindo semana…');
+    try {
+      // Exclui todas as despesas da semana
+      const despSnap = await getDocs(query(collection(db, 'despesas'), where('semanaId', '==', id)));
+      const delPromises = despSnap.docs.map(d => deleteDoc(doc(db, 'despesas', d.id)));
+      await Promise.all(delPromises);
+      // Exclui a semana
+      await deleteDoc(doc(db, 'semanas', id));
+      // Remove do cache
+      window._adminState.todasSemanas = window._adminState.todasSemanas.filter(s => s.id !== id);
+      showToast('Semana excluída com sucesso.');
+      // Volta para o histórico do consultor ativo, ou para o painel
+      const consultorAtivo = window._adminState.consultorAtivo;
+      if (consultorAtivo) {
+        abrirHistoricoConsultor(consultorAtivo.uid, consultorAtivo.nome);
+      } else {
+        adminNavTo('painel');
+      }
+    } catch(e) {
+      console.error('[ExcluirSemana]', e);
+      showToast('Erro ao excluir. Tente novamente.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // ── ADMIN NAV ──────────────────────────────────────────────
@@ -1287,7 +1321,7 @@ p { line-height: 1.5; }
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 20px 12px;
-  background: var(--navy);
+  background: #1a55cc;
   border-bottom: none;
 }
 .topbar-back {
