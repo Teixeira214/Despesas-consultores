@@ -109,6 +109,11 @@
     const el = document.getElementById(id);
     if (el) el.classList.add('active');
     window.scrollTo(0, 0);
+    // Sempre que voltar para login, garante botao habilitado
+    if (id === 'screen-login') {
+      const btnLogin = document.getElementById('btn-login');
+      if (btnLogin) { btnLogin.disabled = false; btnLogin.textContent = 'Entrar'; }
+    }
   };
 
   // ═══════════════════════════════════════════════════════════
@@ -117,6 +122,11 @@
   window.fazerLogout = async function() {
     if (window.FirebaseAuth) await window.FirebaseAuth.logout();
     window._appState = { usuario: null, semanaAtual: null, semanas: [], despesas: [] };
+    // Reabilita botao de login apos logout
+    const btnLogin = document.getElementById('btn-login');
+    if (btnLogin) { btnLogin.disabled = false; btnLogin.textContent = 'Entrar'; }
+    const errEl = document.getElementById('login-erro');
+    if (errEl) errEl.style.display = 'none';
     navTo('screen-login');
   };
 
@@ -166,16 +176,23 @@
             errEl.textContent = 'Perfil não encontrado. Contate o administrador.';
             errEl.style.display = 'block';
           }
+          const btnLogin = document.getElementById('btn-login');
+          if (btnLogin) { btnLogin.disabled = false; btnLogin.textContent = 'Entrar'; }
           navTo('screen-login');
         }
       } catch (e) {
         console.error('[AuthState]', e);
+        const btnLogin = document.getElementById('btn-login');
+        if (btnLogin) { btnLogin.disabled = false; btnLogin.textContent = 'Entrar'; }
         navTo('screen-login');
       } finally {
         setLoading(false);
       }
     } else {
       setLoading(false);
+      // Garante que o botao de login esteja habilitado ao voltar para a tela
+      const btnLogin = document.getElementById('btn-login');
+      if (btnLogin) { btnLogin.disabled = false; btnLogin.textContent = 'Entrar'; }
       navTo('screen-login');
     }
   });
@@ -1052,6 +1069,103 @@
     navTo('screen-revisao');
   };
 
+  // ═══════════════════════════════════════════════════
+  // MODAL DESPESA ADMIN
+  // ═══════════════════════════════════════════════════
+  window.abrirModalDespesaAdmin = function() {
+    const modal = document.getElementById('modal-despesa-admin');
+    if (!modal) return;
+    modal.style.display = 'flex';
+
+    // Preenche select de consultores
+    const consultores = window._adminState.consultores || [];
+    const sel = document.getElementById('adm-desp-consultor');
+    sel.innerHTML = '<option value="">Selecione um consultor…</option>' +
+      consultores.map(c => `<option value="${c.id}">${c.nome || c.id}</option>`).join('');
+    document.getElementById('adm-desp-semana').innerHTML = '<option value="">Selecione um consultor primeiro…</option>';
+    document.getElementById('adm-desp-erro').style.display = 'none';
+
+    sel.onchange = async function() {
+      const uid = sel.value;
+      const semSel = document.getElementById('adm-desp-semana');
+      if (!uid) { semSel.innerHTML = '<option value="">Selecione um consultor primeiro…</option>'; return; }
+      semSel.innerHTML = '<option value="">Carregando semanas…</option>';
+      const todas = window._adminState.todasSemanas || [];
+      const sems  = todas.filter(s => s.uid === uid).sort((a,b) => (b.criadoEm?.seconds||0)-(a.criadoEm?.seconds||0));
+      if (!sems.length) {
+        semSel.innerHTML = '<option value="">Nenhuma semana encontrada</option>';
+      } else {
+        semSel.innerHTML = '<option value="">Selecione uma semana…</option>' +
+          sems.map(s => `<option value="${s.id}">${s.titulo || s.id} — ${s.status || 'Rascunho'}</option>`).join('');
+      }
+    };
+  };
+
+  window.fecharModalDespesaAdmin = function() {
+    const modal = document.getElementById('modal-despesa-admin');
+    if (modal) modal.style.display = 'none';
+  };
+
+  window.salvarDespesaAdmin = async function() {
+    const errEl  = document.getElementById('adm-desp-erro');
+    const btn    = document.getElementById('adm-desp-btn-salvar');
+    const semanaId    = document.getElementById('adm-desp-semana').value;
+    const consultorId = document.getElementById('adm-desp-consultor').value;
+    const tipo   = document.getElementById('adm-desp-tipo').value;
+    const valor  = parseFloat(document.getElementById('adm-desp-valor').value) || 0;
+    const litros = parseFloat(document.getElementById('adm-desp-litros').value) || 0;
+    const obs    = document.getElementById('adm-desp-obs').value.trim();
+    const dia    = document.getElementById('adm-desp-dia').value;
+
+    errEl.style.display = 'none';
+    if (!consultorId) { errEl.textContent = 'Selecione um consultor.'; errEl.style.display = 'block'; return; }
+    if (!semanaId)    { errEl.textContent = 'Selecione uma semana.'; errEl.style.display = 'block'; return; }
+    if (!tipo)        { errEl.textContent = 'Selecione o tipo de despesa.'; errEl.style.display = 'block'; return; }
+    if (!valor || valor <= 0) { errEl.textContent = 'Informe um valor válido.'; errEl.style.display = 'block'; return; }
+
+    btn.disabled = true; btn.textContent = 'Salvando…';
+    try {
+      await addDoc(collection(db, 'despesas'), {
+        semanaId,
+        uid: consultorId,
+        tipo, valor, litros, obs, dia,
+        criadoEm: serverTimestamp(),
+        lancadoPorAdmin: true
+      });
+      // Atualiza totais da semana
+      const snapDesp = await getDocs(query(collection(db, 'despesas'), where('semanaId', '==', semanaId)));
+      const todasDesp = snapDesp.docs.map(d => d.data());
+      const totalCombustivel = todasDesp.filter(d => d.tipo === 'Combustível').reduce((a,d) => a + (d.valor||0), 0);
+      const totalGeral       = todasDesp.reduce((a,d) => a + (d.valor||0), 0);
+      const totalLitros      = todasDesp.filter(d => d.tipo === 'Combustível').reduce((a,d) => a + (d.litros||0), 0);
+      const semSnap = await getDoc(doc(db, 'semanas', semanaId));
+      const semData = semSnap.data() || {};
+      await updateDoc(doc(db, 'semanas', semanaId), {
+        totalCombustivel,
+        totalGeral: (semData.totalKm || 0) > 0 ? totalGeral : totalGeral,
+        totalLitros
+      });
+      showToast('Despesa adicionada com sucesso!');
+      fecharModalDespesaAdmin();
+      // Recarrega estado
+      await carregarPainelAdmin();
+    } catch(e) {
+      console.error('[AdminDespesa]', e);
+      errEl.textContent = 'Erro ao salvar. Tente novamente.';
+      errEl.style.display = 'block';
+    } finally {
+      btn.disabled = false; btn.textContent = 'Salvar despesa';
+    }
+  };
+
+  // Fecha modal ao clicar fora
+  document.addEventListener('click', function(e) {
+    const modal = document.getElementById('modal-despesa-admin');
+    if (modal && modal.style.display === 'flex' && e.target === modal) {
+      fecharModalDespesaAdmin();
+    }
+  });
+
   // ═══════════════════════════════
   // TOAST
   // ═══════════════════════════════
@@ -1522,12 +1636,13 @@ p { line-height: 1.5; }
 #admin-topbar {
   display: flex; align-items: center; justify-content: space-between;
   padding: 0 32px;
-  background: var(--navy);
-  border-bottom: none;
+  background: #1a2f5e;
+  border-bottom: 2px solid rgba(255,255,255,0.08);
   height: auto;
-  min-height: 64px;
+  min-height: 68px;
   flex-wrap: wrap;
   gap: 0;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.25);
 }
 
 /* ── ADMIN HORIZONTAL NAV TABS ── */
@@ -2499,29 +2614,29 @@ p { line-height: 1.5; }
 
   <!-- TOPBAR (desktop) -->
   <div id="admin-topbar">
-    <div style="display:flex;align-items:center;gap:16px;height:64px;">
+    <div style="display:flex;align-items:center;gap:16px;height:68px;">
       <!-- Hamburger toggle -->
-      <button id="btn-sidebar-toggle" onclick="toggleAdminSidebar()" aria-label="Menu lateral">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <button id="btn-sidebar-toggle" onclick="toggleAdminSidebar()" aria-label="Menu lateral" style="color:#fff;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
         </svg>
       </button>
-      <div style="display:flex;align-items:center;gap:10px;">
-        <div class="login-logo" style="width:36px;height:36px;border-radius:9px;background:rgba(255,255,255,0.15);">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:16px;height:16px;color:#fff;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div style="width:38px;height:38px;border-radius:10px;background:#2d52a0;border:1px solid rgba(255,255,255,0.3);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" style="width:18px;height:18px;">
             <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
           </svg>
         </div>
         <div>
-          <p style="font-size:10px;color:rgba(255,255,255,0.5);font-weight:600;letter-spacing:0.06em;text-transform:uppercase;">Controle de Despesas</p>
-          <p style="font-size:13px;font-weight:700;color:#fff;" id="admin-nome">Admin</p>
+          <p style="font-size:10px;color:rgba(255,255,255,0.65);font-weight:700;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:1px;">Controle de Despesas</p>
+          <p style="font-size:14px;font-weight:700;color:#ffffff;letter-spacing:-0.2px;" id="admin-nome">Admin</p>
         </div>
       </div>
     </div>
-    <div style="display:flex;align-items:center;gap:12px;">
-      <div class="avatar" style="background:rgba(255,255,255,0.2);color:#fff;border:1px solid rgba(255,255,255,0.3);font-weight:700;" id="admin-sigla">A</div>
-      <button onclick="fazerLogout()" style="display:flex;align-items:center;gap:6px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:rgba(255,255,255,0.85);padding:7px 14px;border-radius:var(--radius);font-size:13px;font-weight:500;cursor:pointer;font-family:var(--font);transition:background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.18)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div id="admin-sigla" style="width:38px;height:38px;border-radius:50%;background:#2d52a0;color:#ffffff;border:2px solid rgba(255,255,255,0.4);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0;letter-spacing:0.02em;">A</div>
+      <button onclick="fazerLogout()" style="display:flex;align-items:center;gap:7px;background:rgba(255,255,255,0.12);border:1.5px solid rgba(255,255,255,0.35);color:#ffffff;padding:8px 16px;border-radius:var(--radius);font-size:13px;font-weight:600;cursor:pointer;font-family:var(--font);transition:background 0.15s;letter-spacing:0.01em;" onmouseover="this.style.background='rgba(255,255,255,0.22)'" onmouseout="this.style.background='rgba(255,255,255,0.12)'">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         Sair
       </button>
     </div>
@@ -2626,12 +2741,80 @@ p { line-height: 1.5; }
 
     <!-- ── CONSULTORES (cards) ── -->
     <div id="admin-panel-consultores" style="display:none;">
-      <div style="margin-bottom:20px;">
-        <h2 style="margin-bottom:2px;">Consultores</h2>
-        <p style="font-size:13px;color:var(--text-2);">Clique em um consultor para ver o histórico completo de semanas.</p>
+      <div style="margin-bottom:20px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <div>
+          <h2 style="margin-bottom:2px;">Consultores</h2>
+          <p style="font-size:13px;color:var(--text-2);">Clique em um consultor para ver o histórico completo de semanas.</p>
+        </div>
+        <button onclick="abrirModalDespesaAdmin()" class="btn btn-primary" style="display:flex;align-items:center;gap:7px;white-space:nowrap;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Adicionar despesa
+        </button>
       </div>
       <div class="admin-cards-grid" id="admin-cards-consultores">
         <p style="color:var(--text-2);font-size:13px;">Carregando...</p>
+      </div>
+    </div>
+
+    <!-- ── MODAL: ADICIONAR DESPESA (ADMIN) ── -->
+    <div id="modal-despesa-admin" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.45);backdrop-filter:blur(3px);align-items:center;justify-content:center;padding:24px;">
+      <div style="background:var(--surface);border-radius:var(--radius-lg);padding:28px;max-width:480px;width:100%;box-shadow:var(--shadow-md);max-height:90vh;overflow-y:auto;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+          <h2 style="font-size:17px;">Adicionar despesa</h2>
+          <button onclick="fecharModalDespesaAdmin()" style="background:none;border:none;cursor:pointer;color:var(--text-2);padding:4px;border-radius:6px;font-size:20px;line-height:1;" title="Fechar">✕</button>
+        </div>
+        <div class="field">
+          <label>Consultor</label>
+          <select id="adm-desp-consultor">
+            <option value="">Selecione um consultor…</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Semana</label>
+          <select id="adm-desp-semana">
+            <option value="">Selecione um consultor primeiro…</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Tipo de despesa</label>
+          <select id="adm-desp-tipo">
+            <option value="">Selecione…</option>
+            <option>Combustível</option>
+            <option>Pedágio</option>
+            <option>Alimentação</option>
+            <option>Hospedagem</option>
+            <option>Estacionamento</option>
+            <option>Manutenção</option>
+            <option>Outros</option>
+          </select>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div class="field">
+            <label>Dia da semana</label>
+            <select id="adm-desp-dia">
+              <option>Segunda-feira</option><option>Terça-feira</option>
+              <option>Quarta-feira</option><option>Quinta-feira</option>
+              <option>Sexta-feira</option><option>Sábado</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Valor (R$)</label>
+            <input type="number" id="adm-desp-valor" placeholder="0,00" min="0" step="0.01">
+          </div>
+        </div>
+        <div class="field" id="adm-desp-litros-wrap">
+          <label>Litros abastecidos (se combustível)</label>
+          <input type="number" id="adm-desp-litros" placeholder="0.0" min="0" step="0.1">
+        </div>
+        <div class="field">
+          <label>Observação (opcional)</label>
+          <input type="text" id="adm-desp-obs" placeholder="Detalhe da despesa…">
+        </div>
+        <div id="adm-desp-erro" class="erro-msg"></div>
+        <div style="display:flex;gap:10px;margin-top:4px;">
+          <button onclick="fecharModalDespesaAdmin()" class="btn btn-secondary" style="flex:1;">Cancelar</button>
+          <button onclick="salvarDespesaAdmin()" id="adm-desp-btn-salvar" class="btn btn-primary" style="flex:1;">Salvar despesa</button>
+        </div>
       </div>
     </div>
 
@@ -2814,11 +2997,23 @@ p { line-height: 1.5; }
     btnEl.textContent = 'Entrando…';
     btnEl.disabled = true;
 
+    // Segurança: se em 12s nada aconteceu, reabilita o botão
+    const timeoutId = setTimeout(function() {
+      if (btnEl.disabled) {
+        btnEl.textContent = 'Entrar';
+        btnEl.disabled = false;
+        errEl.textContent = 'Tempo esgotado. Verifique sua conexão e tente novamente.';
+        errEl.style.display = 'block';
+      }
+    }, 12000);
+
     try {
       if (!window.FirebaseAuth) throw { code: 'auth/network-request-failed' };
       await window.FirebaseAuth.login(email, senha);
       /* Sucesso: onAuthStateChanged → auth-state-changed dispara a navegação */
+      /* O botão será reabilitado pela tela de login caso o logout ocorra depois */
     } catch (e) {
+      clearTimeout(timeoutId);
       errEl.textContent = traduzirErro(e.code || e.message || '');
       errEl.style.display = 'block';
       btnEl.textContent = 'Entrar';
