@@ -438,8 +438,8 @@
 
   // Retorna o tipo selecionado (chave interna)
   function getTipoSelecionado() {
-    const pill = document.querySelector('#screen-despesa .tipo-pill.selected');
-    return pill ? (pill.dataset.tipo || 'outras') : 'outras';
+    const btn = document.querySelector('#screen-despesa .desp-tipo-btn.selected');
+    return btn ? (btn.dataset.tipo || 'outras') : 'outras';
   }
 
   // Retorna o label legível do tipo
@@ -449,7 +449,7 @@
 
   // Seleciona tipo e controla visibilidade dos campos de combustível
   window.selecionarTipo = function(pill, tipo) {
-    document.querySelectorAll('#screen-despesa .tipo-pill').forEach(p => p.classList.remove('selected'));
+    document.querySelectorAll('#screen-despesa .desp-tipo-btn').forEach(p => p.classList.remove('selected'));
     pill.classList.add('selected');
     const isComb = tipo === 'combustivel';
     const litGrp = document.getElementById('litros-group');
@@ -485,10 +485,14 @@
 
   // Navega para a tela de despesa e reseta o formulário
   window.irParaDespesa = function() {
+    if (!window._appState.semanaAtual) {
+      showToast('Abra ou crie uma semana primeiro.');
+      return;
+    }
     // Reset tipo para combustível
-    document.querySelectorAll('#screen-despesa .tipo-pill').forEach(p => p.classList.remove('selected'));
-    const firstPill = document.querySelector('#screen-despesa .tipo-pill[data-tipo="combustivel"]');
-    if (firstPill) firstPill.classList.add('selected');
+    document.querySelectorAll('#screen-despesa .desp-tipo-btn').forEach(p => p.classList.remove('selected'));
+    const firstBtn = document.querySelector('#screen-despesa .desp-tipo-btn[data-tipo="combustivel"]');
+    if (firstBtn) firstBtn.classList.add('selected');
 
     // Mostra campos de combustível, esconde preview
     const litGrp = document.getElementById('litros-group');
@@ -602,26 +606,37 @@
   // Carrega todas as despesas de uma semana
   async function carregarDespesasSemana(semanaId) {
     if (!semanaId) return;
+    const uid = window._appState.usuario?.uid;
+    if (!uid) return;
+
+    // A query DEVE incluir uid para satisfazer a Security Rule:
+    //   allow read: if resource.data.uid == request.auth.uid || isAdmin()
+    // Sem o filtro uid, o Firestore rejeita a query inteira.
     try {
-      // Tenta com orderBy (requer índice composto no Firestore)
       const q = query(
         collection(db, 'despesas'),
         where('semanaId', '==', semanaId),
+        where('uid', '==', uid),
         orderBy('criadoEm', 'asc')
       );
       const snap = await getDocs(q);
       window._appState.despesas = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     } catch (e) {
-      console.warn('[Despesas] Sem índice, buscando sem orderBy:', e.message);
+      console.warn('[Despesas] orderBy falhou (índice ausente?), tentando sem:', e.message);
       try {
-        const q2 = query(collection(db, 'despesas'), where('semanaId', '==', semanaId));
+        // Fallback sem orderBy — ainda inclui uid para satisfazer as rules
+        const q2 = query(
+          collection(db, 'despesas'),
+          where('semanaId', '==', semanaId),
+          where('uid', '==', uid)
+        );
         const snap2 = await getDocs(q2);
-        // Ordena localmente por criadoEm (seconds)
         window._appState.despesas = snap2.docs
           .map(d => ({ id: d.id, ...d.data() }))
           .sort((a, b) => (a.criadoEm?.seconds || 0) - (b.criadoEm?.seconds || 0));
       } catch (e2) {
-        console.error('[Despesas] Fallback também falhou:', e2);
+        console.error('[Despesas] Ambas as queries falharam:', e2.code, e2.message);
+        showToast('Erro ao carregar despesas: ' + (e2.message || e2.code));
         window._appState.despesas = [];
       }
     }
@@ -1384,21 +1399,7 @@
   // ═══════════════════════════════
   // ATALHOS DE NAVEGAÇÃO
   // ═══════════════════════════════
-  window.irParaSemana  = () => navTo('screen-semana');
-  window.irParaDespesa = () => {
-    if (!window._appState.semanaAtual) {
-      showToast('Abra ou crie uma semana primeiro.');
-      return;
-    }
-    const diaEl = document.getElementById('desp-dia');
-    if (diaEl) {
-      diaEl.innerHTML = `
-        <option>Segunda-feira</option><option>Terça-feira</option>
-        <option>Quarta-feira</option><option>Quinta-feira</option>
-        <option>Sexta-feira</option><option>Sábado</option>`;
-    }
-    navTo('screen-despesa');
-  };
+  window.irParaSemana = () => navTo('screen-semana');
 
 // Conexão do botão: feita pelo script clássico abaixo
 
