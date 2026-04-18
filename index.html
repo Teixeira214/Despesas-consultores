@@ -422,11 +422,188 @@
     document.getElementById('km-total').textContent = fmtKm(totalKm);
   };
 
-  // ═══════════════════════════════
-  // DESPESAS
-  // ═══════════════════════════════
-  async function carregarDespesasSemana(semanaId) {
+  // ═══════════════════════════════════════════════════════════
+  // DESPESAS — lógica completamente reescrita
+  // ═══════════════════════════════════════════════════════════
+
+  // Tipos válidos e label de exibição
+  const TIPOS_DESPESA = {
+    'combustivel': 'Combustível',
+    'refeicao':    'Refeição',
+    'hotel':       'Hotel',
+    'pedagio':     'Pedágio',
+    'lavagem':     'Lavagem',
+    'outras':      'Outras'
+  };
+
+  // Retorna o tipo selecionado (chave interna)
+  function getTipoSelecionado() {
+    const pill = document.querySelector('#screen-despesa .tipo-pill.selected');
+    return pill ? (pill.dataset.tipo || 'outras') : 'outras';
+  }
+
+  // Retorna o label legível do tipo
+  function getLabelTipo(chave) {
+    return TIPOS_DESPESA[chave] || chave || 'Outras';
+  }
+
+  // Seleciona tipo e controla visibilidade dos campos de combustível
+  window.selecionarTipo = function(pill, tipo) {
+    document.querySelectorAll('#screen-despesa .tipo-pill').forEach(p => p.classList.remove('selected'));
+    pill.classList.add('selected');
+    const isComb = tipo === 'combustivel';
+    const litGrp = document.getElementById('litros-group');
+    const odmGrp = document.getElementById('odometro-group');
+    const medPrv = document.getElementById('media-preview');
+    if (litGrp) litGrp.style.display  = isComb ? 'block' : 'none';
+    if (odmGrp) odmGrp.style.display  = isComb ? 'block' : 'none';
+    if (medPrv) medPrv.style.display  = 'none';
+    // Limpa litros e odômetro quando não é combustível
+    if (!isComb) {
+      const litEl = document.getElementById('desp-litros');
+      const odmEl = document.getElementById('desp-odom');
+      if (litEl) litEl.value = '';
+      if (odmEl) odmEl.value = '';
+    }
+  };
+
+  // Atualiza preview de média km/l enquanto usuário digita litros
+  window.atualizarMediaPreview = function() {
+    const litrosEl = document.getElementById('desp-litros');
+    const mediaEl  = document.getElementById('media-preview');
+    const mediaVal = document.getElementById('media-valor');
+    if (!litrosEl || !mediaEl || !mediaVal) return;
+    const litros = parseFloat(litrosEl.value);
+    const km     = recalcTotalKm();
+    if (litros > 0 && km > 0) {
+      mediaEl.style.display = 'block';
+      mediaVal.textContent  = (km / litros).toFixed(1) + ' km/l';
+    } else {
+      mediaEl.style.display = 'none';
+    }
+  };
+
+  // Navega para a tela de despesa e reseta o formulário
+  window.irParaDespesa = function() {
+    // Reset tipo para combustível
+    document.querySelectorAll('#screen-despesa .tipo-pill').forEach(p => p.classList.remove('selected'));
+    const firstPill = document.querySelector('#screen-despesa .tipo-pill[data-tipo="combustivel"]');
+    if (firstPill) firstPill.classList.add('selected');
+
+    // Mostra campos de combustível, esconde preview
+    const litGrp = document.getElementById('litros-group');
+    const odmGrp = document.getElementById('odometro-group');
+    const medPrv = document.getElementById('media-preview');
+    if (litGrp) litGrp.style.display = 'block';
+    if (odmGrp) odmGrp.style.display = 'block';
+    if (medPrv) medPrv.style.display = 'none';
+
+    // Limpa todos os campos
+    ['desp-valor','desp-litros','desp-odom','desp-obs'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+
+    // Reseta select de dia para o primeiro
+    const diaEl = document.getElementById('desp-dia');
+    if (diaEl) diaEl.selectedIndex = 0;
+
+    // Limpa erro
+    const errEl = document.getElementById('desp-erro');
+    if (errEl) errEl.style.display = 'none';
+
+    navTo('screen-despesa');
+  };
+
+  // Salva despesa no Firestore e recarrega a semana
+  window.salvarDespesa = async function() {
+    const semanaId = window._appState.semanaAtual;
+    if (!semanaId) {
+      showToast('Nenhuma semana aberta.');
+      return;
+    }
+
+    const errEl = document.getElementById('desp-erro');
+    if (errEl) errEl.style.display = 'none';
+
+    // Coleta dados do formulário
+    const tipoChave = getTipoSelecionado();
+    const tipoLabel = getLabelTipo(tipoChave);
+    const valorStr  = (document.getElementById('desp-valor')?.value || '').replace(',', '.');
+    const valor     = parseFloat(valorStr);
+    const litrosStr = (document.getElementById('desp-litros')?.value || '').replace(',', '.');
+    const litros    = parseFloat(litrosStr) || 0;
+    const odomStr   = (document.getElementById('desp-odom')?.value || '').replace(',', '.');
+    const odometro  = parseFloat(odomStr) || 0;
+    const obs       = (document.getElementById('desp-obs')?.value || '').trim();
+    const diaEl     = document.getElementById('desp-dia');
+    const dia       = diaEl ? diaEl.options[diaEl.selectedIndex]?.text : '';
+
+    // Validações
+    if (!valor || isNaN(valor) || valor <= 0) {
+      if (errEl) { errEl.textContent = 'Informe um valor válido maior que zero.'; errEl.style.display = 'block'; }
+      return;
+    }
+    if (tipoChave === 'combustivel' && litros <= 0) {
+      if (errEl) { errEl.textContent = 'Para combustível, informe a quantidade de litros.'; errEl.style.display = 'block'; }
+      return;
+    }
+
+    const btnSalvar = document.getElementById('btn-salvar-despesa');
+    if (btnSalvar) { btnSalvar.disabled = true; btnSalvar.textContent = 'Salvando…'; }
+
     try {
+      const despesaData = {
+        semanaId,
+        uid:       window._appState.usuario.uid,
+        tipo:      tipoLabel,
+        tipoChave,
+        valor,
+        litros,
+        odometro,
+        obs,
+        dia,
+        criadoEm: serverTimestamp()
+      };
+
+      await addDoc(collection(db, 'despesas'), despesaData);
+      showToast('✅ Despesa salva com sucesso!');
+
+      // Recarrega despesas da semana (atualiza resumo e Firestore)
+      await carregarDespesasSemana(semanaId);
+
+      // Volta para tela da semana
+      navTo('screen-semana');
+    } catch (e) {
+      console.error('[SalvarDespesa]', e);
+      if (errEl) {
+        errEl.textContent = 'Erro ao salvar: ' + (e.message || 'tente novamente.');
+        errEl.style.display = 'block';
+      }
+    } finally {
+      if (btnSalvar) { btnSalvar.disabled = false; btnSalvar.textContent = 'Salvar despesa'; }
+    }
+  };
+
+  // Exclui despesa e atualiza resumo
+  window.excluirDespesa = async function(despId) {
+    if (!confirm('Excluir esta despesa?')) return;
+    try {
+      await deleteDoc(doc(db, 'despesas', despId));
+      const id = window._appState.semanaAtual;
+      await carregarDespesasSemana(id);
+      showToast('Despesa excluída.');
+    } catch(e) {
+      console.error('[ExcluirDespesa]', e);
+      showToast('Erro ao excluir.');
+    }
+  };
+
+  // Carrega todas as despesas de uma semana
+  async function carregarDespesasSemana(semanaId) {
+    if (!semanaId) return;
+    try {
+      // Tenta com orderBy (requer índice composto no Firestore)
       const q = query(
         collection(db, 'despesas'),
         where('semanaId', '==', semanaId),
@@ -435,129 +612,120 @@
       const snap = await getDocs(q);
       window._appState.despesas = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     } catch (e) {
-      console.warn('[Despesas] Tentando sem orderBy:', e.message);
+      console.warn('[Despesas] Sem índice, buscando sem orderBy:', e.message);
       try {
         const q2 = query(collection(db, 'despesas'), where('semanaId', '==', semanaId));
         const snap2 = await getDocs(q2);
-        window._appState.despesas = snap2.docs.map(d => ({ id: d.id, ...d.data() }));
+        // Ordena localmente por criadoEm (seconds)
+        window._appState.despesas = snap2.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => (a.criadoEm?.seconds || 0) - (b.criadoEm?.seconds || 0));
       } catch (e2) {
+        console.error('[Despesas] Fallback também falhou:', e2);
         window._appState.despesas = [];
       }
     }
     renderizarDespesas();
-    recalcResumoSemana();
+    await recalcResumoSemana();
   }
+
+  // Ícones por tipo de despesa
+  const ICONES_TIPO = {
+    'combustivel': '⛽', 'Combustível': '⛽',
+    'refeicao':    '🍽️', 'Refeição':    '🍽️',
+    'hotel':       '🏨', 'Hotel':       '🏨',
+    'pedagio':     '🛣️', 'Pedágio':     '🛣️',
+    'lavagem':     '🚿', 'Lavagem':     '🚿',
+    'outras':      '📌', 'Outras':      '📌'
+  };
 
   function renderizarDespesas() {
-    const lista = window._appState.despesas;
+    const lista     = window._appState.despesas || [];
     const container = document.getElementById('lista-despesas');
+    if (!container) return;
+
     if (!lista.length) {
-      container.innerHTML = '<div class="card-row"><span style="font-size:13px;color:var(--text-2);">Nenhuma despesa adicionada.</span></div>';
-    } else {
-      container.innerHTML = lista.map(d => `
-        <div class="card-row">
-          <div>
-            <div style="font-size:14px;font-weight:500;">${d.tipo} — ${d.dia || ''}</div>
-            <div style="font-size:12px;color:var(--text-2);">${d.obs || ''}</div>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <span style="font-family:var(--mono);font-weight:600;">${fmt(d.valor)}</span>
-            <button onclick="excluirDespesa('${d.id}')" style="background:none;border:none;cursor:pointer;color:var(--red);font-size:12px;padding:2px 6px;">✕</button>
-          </div>
-        </div>
-      `).join('');
+      container.innerHTML = `
+        <div style="padding:20px 16px;text-align:center;">
+          <div style="font-size:28px;margin-bottom:8px;">🧾</div>
+          <div style="font-size:13px;color:var(--text-2);font-weight:500;">Nenhuma despesa adicionada ainda.</div>
+          <div style="font-size:12px;color:var(--text-3);margin-top:4px;">Toque em "+ Adicionar despesa" abaixo.</div>
+        </div>`;
+      return;
     }
+
+    container.innerHTML = lista.map(d => {
+      const icone  = ICONES_TIPO[d.tipoChave] || ICONES_TIPO[d.tipo] || '📌';
+      const label  = d.tipo || 'Despesa';
+      const dia    = d.dia ? ` · ${d.dia}` : '';
+      const litros = d.litros > 0 ? `<span style="font-size:11px;color:var(--text-3);">${d.litros.toFixed(2)}L</span>` : '';
+      const obs    = d.obs ? `<div style="font-size:11px;color:var(--text-3);margin-top:2px;">${d.obs}</div>` : '';
+      return `
+        <div class="desp-item">
+          <div class="desp-item-icon">${icone}</div>
+          <div class="desp-item-info">
+            <div class="desp-item-label">${label}${dia}</div>
+            ${obs}
+            ${litros}
+          </div>
+          <div class="desp-item-right">
+            <span class="desp-item-valor">${fmt(d.valor)}</span>
+            <button class="desp-item-del" onclick="excluirDespesa('${d.id}')" title="Excluir">✕</button>
+          </div>
+        </div>`;
+    }).join('');
   }
 
+  // Recalcula o resumo da semana e salva no Firestore
   async function recalcResumoSemana() {
-    const despesas = window._appState.despesas;
-    const id = window._appState.semanaAtual;
-    let totalCombustivel = 0, totalOutras = 0, totalLitros = 0;
+    const despesas = window._appState.despesas || [];
+    const id       = window._appState.semanaAtual;
+
+    let totalCombustivel = 0;
+    let totalOutras      = 0;
+    let totalLitros      = 0;
+
     despesas.forEach(d => {
-      if (d.tipo === 'Combustível') { totalCombustivel += d.valor || 0; totalLitros += d.litros || 0; }
-      else totalOutras += d.valor || 0;
+      const v = parseFloat(d.valor) || 0;
+      const l = parseFloat(d.litros) || 0;
+      // Compatível com chave 'combustivel' ou label 'Combustível'
+      const isComb = d.tipoChave === 'combustivel' || d.tipo === 'Combustível';
+      if (isComb) {
+        totalCombustivel += v;
+        totalLitros      += l;
+      } else {
+        totalOutras += v;
+      }
     });
-    const km = recalcTotalKm();
-    const media = totalLitros > 0 ? (km / totalLitros).toFixed(1) : '—';
+
+    const km         = recalcTotalKm();
     const totalGeral = totalCombustivel + totalOutras;
+    const media      = (totalLitros > 0 && km > 0) ? (km / totalLitros).toFixed(1) : '—';
 
-    document.getElementById('res-km').textContent     = fmtKm(km);
-    document.getElementById('res-litros').textContent = totalLitros.toFixed(2) + ' L';
-    document.getElementById('res-media').textContent  = media;
-    document.getElementById('res-comb').textContent   = fmt(totalCombustivel);
-    document.getElementById('res-outras').textContent = fmt(totalOutras);
-    document.getElementById('res-total').textContent  = fmt(totalGeral);
+    // Atualiza elementos do resumo na tela semana
+    const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    setEl('res-km',     fmtKm(km));
+    setEl('res-litros', totalLitros > 0 ? totalLitros.toFixed(2) + ' L' : '0,00 L');
+    setEl('res-media',  media !== '—' ? media + ' km/l' : '—');
+    setEl('res-comb',   fmt(totalCombustivel));
+    setEl('res-outras', fmt(totalOutras));
+    setEl('res-total',  fmt(totalGeral));
 
+    // Persiste no Firestore
     if (id) {
-      await updateDoc(doc(db, 'semanas', id), { totalCombustivel, totalGeral, totalLitros, totalKm: km });
+      try {
+        await updateDoc(doc(db, 'semanas', id), {
+          totalCombustivel,
+          totalOutras,
+          totalGeral,
+          totalLitros,
+          totalKm: km
+        });
+      } catch(e) {
+        console.warn('[RecalcResumo] updateDoc falhou:', e.message);
+      }
     }
   }
-
-  window.selecionarTipo = function(pill, tipo) {
-    document.querySelectorAll('.tipo-pill').forEach(p => p.classList.remove('selected'));
-    pill.classList.add('selected');
-    document.getElementById('litros-group').style.display = tipo === 'combustivel' ? 'block' : 'none';
-    document.getElementById('odometro-group').style.display = tipo === 'combustivel' ? 'block' : 'none';
-    document.getElementById('media-preview').style.display = 'none';
-  };
-
-  document.addEventListener('input', function() {
-    const litrosEl = document.getElementById('desp-litros');
-    const mediaEl  = document.getElementById('media-preview');
-    const mediaVal = document.getElementById('media-valor');
-    if (!litrosEl) return;
-    const litros = parseFloat(litrosEl.value);
-    const km = recalcTotalKm();
-    if (litros > 0 && km > 0) {
-      if (mediaEl) mediaEl.style.display = 'block';
-      if (mediaVal) mediaVal.textContent = (km / litros).toFixed(1) + ' km/l';
-    }
-  });
-
-  window.salvarDespesa = async function() {
-    const id = window._appState.semanaAtual;
-    if (!id) { showToast('Nenhuma semana aberta.'); return; }
-    const tipoEl = document.querySelector('.tipo-pill.selected');
-    const tipo   = tipoEl ? tipoEl.textContent : 'Outras';
-    const valor  = parseFloat(document.getElementById('desp-valor')?.value) || 0;
-    const litros = parseFloat(document.getElementById('desp-litros')?.value) || 0;
-    const obs    = document.getElementById('desp-obs')?.value || '';
-    const diaEl  = document.getElementById('desp-dia');
-    const dia    = diaEl ? diaEl.options[diaEl.selectedIndex]?.text : '';
-
-    if (!valor) { showToast('Informe o valor da despesa.'); return; }
-
-    const btnSalvar = document.querySelector('#screen-despesa .btn-success');
-    if (btnSalvar) { btnSalvar.disabled = true; btnSalvar.textContent = 'Salvando…'; }
-
-    try {
-      await addDoc(collection(db, 'despesas'), {
-        semanaId: id,
-        uid: window._appState.usuario.uid,
-        tipo, valor, litros, obs, dia,
-        criadoEm: serverTimestamp()
-      });
-      showToast('Despesa salva!');
-      // Limpa formulário
-      document.getElementById('desp-valor').value  = '';
-      document.getElementById('desp-litros').value = '';
-      if (document.getElementById('desp-odom'))  document.getElementById('desp-odom').value  = '';
-      if (document.getElementById('desp-obs'))   document.getElementById('desp-obs').value   = '';
-      // Recarrega despesas e depois navega de volta
-      await carregarDespesasSemana(id);
-      navTo('screen-semana');
-    } finally {
-      if (btnSalvar) { btnSalvar.disabled = false; btnSalvar.textContent = 'Salvar despesa'; }
-    }
-  };
-
-  window.excluirDespesa = async function(despId) {
-    if (!confirm('Excluir esta despesa?')) return;
-    await deleteDoc(doc(db, 'despesas', despId));
-    const id = window._appState.semanaAtual;
-    await carregarDespesasSemana(id);
-    showToast('Despesa excluída.');
-  };
 
   // ═══════════════════════════════
   // ENVIAR SEMANA
@@ -1673,13 +1841,13 @@ p { line-height: 1.5; }
 #admin-topbar {
   display: flex; align-items: center; justify-content: space-between;
   padding: 0 32px;
-  background: #000000;
-  border-bottom: 2px solid rgba(255,255,255,0.12);
+  background: #1e3a8a;
+  border-bottom: 2px solid rgba(255,255,255,0.10);
   height: auto;
   min-height: 68px;
   flex-wrap: wrap;
   gap: 0;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+  box-shadow: 0 2px 16px rgba(30,58,138,0.35);
 }
 
 /* ── ADMIN HORIZONTAL NAV TABS ── */
@@ -1771,100 +1939,149 @@ p { line-height: 1.5; }
   border-radius: 12px; margin-left: 8px; letter-spacing: 0.02em;
 }
 
+/* ── DESPESA TIPO BUTTONS ── */
+.desp-tipo-btn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px; padding: 10px 6px;
+  border-radius: var(--radius); border: 1.5px solid var(--border);
+  background: var(--surface2); font-family: var(--font);
+  font-size: 12px; font-weight: 500; color: var(--text-2);
+  cursor: pointer; transition: all 0.15s; line-height: 1.2;
+  text-align: center; min-height: 62px;
+}
+.desp-tipo-btn:hover { border-color: var(--text-3); background: var(--surface); color: var(--text); }
+.desp-tipo-btn.selected {
+  border-color: var(--blue); background: var(--blue-bg);
+  color: var(--blue); font-weight: 600;
+}
+.desp-tipo-icon { font-size: 20px; line-height: 1; }
+
+/* ── FIELD LABEL ── */
+.field-label {
+  display: block; font-size: 12px; font-weight: 600;
+  color: var(--text-2); margin-bottom: 6px;
+  letter-spacing: 0.02em;
+}
+
+/* ── DESPESA ITEM LIST ── */
+.desp-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+}
+.desp-item:last-child { border-bottom: none; }
+.desp-item-icon {
+  font-size: 22px; flex-shrink: 0; width: 36px; height: 36px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface2); border-radius: 10px;
+}
+.desp-item-info { flex: 1; min-width: 0; }
+.desp-item-label { font-size: 14px; font-weight: 500; color: var(--text); }
+.desp-item-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.desp-item-valor { font-family: var(--mono); font-weight: 600; font-size: 14px; color: var(--text); }
+.desp-item-del {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-3); font-size: 14px; padding: 4px 6px;
+  border-radius: 6px; transition: all 0.12s; line-height: 1;
+}
+.desp-item-del:hover { background: var(--red-bg); color: var(--red); }
+
 /* ══════════════════════════════════════════════════
-   ADMIN DARK MODE — tela inteira fundo preto
+   ADMIN BLUE THEME
    ══════════════════════════════════════════════════ */
 #screen-admin,
 #screen-admin * {
-  --bg:            #0a0a0a;
-  --surface:       #141414;
-  --surface2:      #1c1c1c;
-  --surface3:      #242424;
-  --border:        rgba(255,255,255,0.08);
-  --border-strong: rgba(255,255,255,0.16);
-  --text:          #f0f0f0;
-  --text-2:        #a0a0a0;
-  --text-3:        #606060;
-  --green:         #4ade80;
-  --green-bg:      rgba(74,222,128,0.10);
-  --green-border:  rgba(74,222,128,0.25);
-  --amber:         #fbbf24;
-  --amber-bg:      rgba(251,191,36,0.10);
-  --amber-border:  rgba(251,191,36,0.25);
-  --red:           #f87171;
-  --red-bg:        rgba(248,113,113,0.10);
-  --red-border:    rgba(248,113,113,0.25);
-  --blue:          #60a5fa;
-  --blue-bg:       rgba(96,165,250,0.12);
-  --blue-border:   rgba(96,165,250,0.25);
-  --shadow-sm:     0 1px 4px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.05);
-  --shadow-md:     0 4px 16px rgba(0,0,0,0.5);
+  --bg:            #f0f5ff;
+  --surface:       #ffffff;
+  --surface2:      #e8effe;
+  --surface3:      #dce8fd;
+  --border:        rgba(37,99,235,0.12);
+  --border-strong: rgba(37,99,235,0.25);
+  --text:          #0f1f4b;
+  --text-2:        #3a5080;
+  --text-3:        #6b87b8;
+  --accent:        #2563eb;
+  --green:         #059669;
+  --green-bg:      rgba(5,150,105,0.08);
+  --green-border:  rgba(5,150,105,0.22);
+  --amber:         #d97706;
+  --amber-bg:      rgba(217,119,6,0.08);
+  --amber-border:  rgba(217,119,6,0.22);
+  --red:           #dc2626;
+  --red-bg:        rgba(220,38,38,0.08);
+  --red-border:    rgba(220,38,38,0.20);
+  --blue:          #2563eb;
+  --blue-bg:       rgba(37,99,235,0.10);
+  --blue-border:   rgba(37,99,235,0.25);
+  --shadow-sm:     0 1px 4px rgba(37,99,235,0.10), 0 0 0 1px rgba(37,99,235,0.06);
+  --shadow-md:     0 4px 16px rgba(37,99,235,0.14);
 }
 
-#screen-admin { background: #0a0a0a; color: #f0f0f0; }
-#screen-admin #admin-main-area { background: #0a0a0a; color: #f0f0f0; }
-#screen-admin #admin-sidenav { background: #111111; border-right: 1px solid rgba(255,255,255,0.08); }
-#screen-admin .card { background: #141414; border-color: rgba(255,255,255,0.08); }
-#screen-admin .admin-table { background: #141414; border-color: rgba(255,255,255,0.08); }
-#screen-admin .admin-table th { background: #1c1c1c; color: #606060; border-color: rgba(255,255,255,0.08); }
-#screen-admin .admin-table td { border-color: rgba(255,255,255,0.06); color: #f0f0f0; }
-#screen-admin .admin-tr:hover td { background: #1c1c1c; }
-#screen-admin .admin-kpi-card { background: #141414; border-color: rgba(255,255,255,0.08); }
-#screen-admin .admin-kpi-label { color: #808080; }
-#screen-admin .admin-kpi-value { color: #f0f0f0; }
-#screen-admin .consultor-card { background: #141414; border-color: rgba(255,255,255,0.08); }
-#screen-admin .consultor-card:hover { border-color: rgba(255,255,255,0.3); box-shadow: 0 2px 12px rgba(0,0,0,0.5); }
-#screen-admin .mini-kpi { background: #1c1c1c; }
-#screen-admin .mini-kpi-label { color: #606060; }
-#screen-admin .mini-kpi-value { color: #f0f0f0; }
-#screen-admin .section-label { color: #606060; }
-#screen-admin h2, #screen-admin h3 { color: #f0f0f0; }
-#screen-admin p { color: #a0a0a0; }
-#screen-admin .field label { color: #808080; }
+#screen-admin { background: #f0f5ff; color: #0f1f4b; }
+#screen-admin #admin-main-area { background: #f0f5ff; color: #0f1f4b; }
+#screen-admin #admin-sidenav { background: #1e3a8a; border-right: 1px solid rgba(255,255,255,0.10); }
+#screen-admin .card { background: #fff; border-color: rgba(37,99,235,0.12); }
+#screen-admin .admin-table { background: #fff; border-color: rgba(37,99,235,0.12); }
+#screen-admin .admin-table th { background: #e8effe; color: #3a5080; border-color: rgba(37,99,235,0.12); }
+#screen-admin .admin-table td { border-color: rgba(37,99,235,0.08); color: #0f1f4b; }
+#screen-admin .admin-tr:hover td { background: #f0f5ff; }
+#screen-admin .admin-kpi-card { background: #fff; border-color: rgba(37,99,235,0.12); }
+#screen-admin .admin-kpi-label { color: #3a5080; }
+#screen-admin .admin-kpi-value { color: #0f1f4b; }
+#screen-admin .consultor-card { background: #fff; border-color: rgba(37,99,235,0.12); }
+#screen-admin .consultor-card:hover { border-color: #2563eb; box-shadow: 0 2px 12px rgba(37,99,235,0.15); }
+#screen-admin .mini-kpi { background: #e8effe; }
+#screen-admin .mini-kpi-label { color: #6b87b8; }
+#screen-admin .mini-kpi-value { color: #0f1f4b; }
+#screen-admin .section-label { color: #6b87b8; }
+#screen-admin h2, #screen-admin h3 { color: #0f1f4b; }
+#screen-admin p { color: #3a5080; }
+#screen-admin .field label { color: #3a5080; }
 #screen-admin .field input,
 #screen-admin .field select,
 #screen-admin .field textarea {
-  background: #1c1c1c;
-  border-color: rgba(255,255,255,0.14);
-  color: #f0f0f0;
+  background: #e8effe;
+  border-color: rgba(37,99,235,0.18);
+  color: #0f1f4b;
 }
 #screen-admin .field input:focus,
-#screen-admin .field select:focus { border-color: rgba(255,255,255,0.4); }
-#screen-admin .field select option { background: #1c1c1c; color: #f0f0f0; }
-#screen-admin .btn-secondary { background: #1c1c1c; color: #f0f0f0; border-color: rgba(255,255,255,0.14); }
-#screen-admin .btn-secondary:hover { background: #252525; }
-#screen-admin .admin-sidenav-item { color: #808080; }
-#screen-admin .admin-sidenav-item:hover { background: #1c1c1c; color: #f0f0f0; }
-#screen-admin .admin-sidenav-item.active { background: rgba(96,165,250,0.12); color: #60a5fa; }
-#screen-admin .sidenav-label { color: #505050; }
-#screen-admin .admin-sidenav-divider { background: rgba(255,255,255,0.07); }
-#screen-admin .week-item { border-color: rgba(255,255,255,0.07); }
-#screen-admin .week-item:hover { background: #1c1c1c; }
-#screen-admin .week-title { color: #f0f0f0; }
-#screen-admin .week-sub { color: #808080; }
-#screen-admin .stat-row { border-color: rgba(255,255,255,0.07); }
-#screen-admin .stat-label { color: #808080; }
-#screen-admin .card-row { border-color: rgba(255,255,255,0.07); }
-#screen-admin .bottom-nav { background: #111111; border-top: 1px solid rgba(255,255,255,0.08); }
-#screen-admin .topbar-back { color: #808080; }
-#screen-admin .topbar-back:hover { color: #f0f0f0; }
+#screen-admin .field select:focus { border-color: #2563eb; }
+#screen-admin .field select option { background: #fff; color: #0f1f4b; }
+#screen-admin .btn-secondary { background: #e8effe; color: #0f1f4b; border-color: rgba(37,99,235,0.18); }
+#screen-admin .btn-secondary:hover { background: #dce8fd; }
 
-/* Badges dark */
-#screen-admin .badge-green { background: rgba(74,222,128,0.10); color: #4ade80; border-color: rgba(74,222,128,0.25); }
-#screen-admin .badge-amber { background: rgba(251,191,36,0.10); color: #fbbf24; border-color: rgba(251,191,36,0.25); }
-#screen-admin .badge-blue  { background: rgba(96,165,250,0.12); color: #60a5fa; border-color: rgba(96,165,250,0.25); }
-#screen-admin .badge-red   { background: rgba(248,113,113,0.10); color: #f87171; border-color: rgba(248,113,113,0.25); }
+/* Sidenav azul escuro com texto branco */
+#screen-admin .admin-sidenav-item { color: rgba(255,255,255,0.65); }
+#screen-admin .admin-sidenav-item:hover { background: rgba(255,255,255,0.10); color: #fff; }
+#screen-admin .admin-sidenav-item.active { background: rgba(255,255,255,0.18); color: #fff; font-weight: 600; }
+#screen-admin .sidenav-label { color: rgba(255,255,255,0.35); }
+#screen-admin .admin-sidenav-divider { background: rgba(255,255,255,0.10); }
 
-/* Botões de ação nas tabelas */
-#screen-admin .btn-aprovar { background: rgba(74,222,128,0.10); color: #4ade80; border-color: rgba(74,222,128,0.25); }
-#screen-admin .btn-devolver { background: rgba(248,113,113,0.10); color: #f87171; border-color: rgba(248,113,113,0.25); }
+#screen-admin .week-item { border-color: rgba(37,99,235,0.08); }
+#screen-admin .week-item:hover { background: #f0f5ff; }
+#screen-admin .week-title { color: #0f1f4b; }
+#screen-admin .week-sub { color: #3a5080; }
+#screen-admin .stat-row { border-color: rgba(37,99,235,0.08); }
+#screen-admin .stat-label { color: #3a5080; }
+#screen-admin .card-row { border-color: rgba(37,99,235,0.08); }
+#screen-admin .topbar-back { color: #3a5080; }
+#screen-admin .topbar-back:hover { color: #0f1f4b; }
 
-/* Scrollbar discreta */
+/* Badges blue theme */
+#screen-admin .badge-green { background: rgba(5,150,105,0.08); color: #059669; border-color: rgba(5,150,105,0.22); }
+#screen-admin .badge-amber { background: rgba(217,119,6,0.08); color: #d97706; border-color: rgba(217,119,6,0.22); }
+#screen-admin .badge-blue  { background: rgba(37,99,235,0.10); color: #2563eb; border-color: rgba(37,99,235,0.25); }
+#screen-admin .badge-red   { background: rgba(220,38,38,0.08); color: #dc2626; border-color: rgba(220,38,38,0.20); }
+
+/* Botões de ação */
+#screen-admin .btn-aprovar { background: rgba(5,150,105,0.08); color: #059669; border-color: rgba(5,150,105,0.22); }
+#screen-admin .btn-devolver { background: rgba(220,38,38,0.08); color: #dc2626; border-color: rgba(220,38,38,0.20); }
+
+/* Scrollbar azul sutil */
 #screen-admin #admin-main-area::-webkit-scrollbar { width: 6px; }
 #screen-admin #admin-main-area::-webkit-scrollbar-track { background: transparent; }
-#screen-admin #admin-main-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+#screen-admin #admin-main-area::-webkit-scrollbar-thumb { background: rgba(37,99,235,0.20); border-radius: 3px; }
 #screen-admin #admin-sidenav::-webkit-scrollbar { width: 4px; }
-#screen-admin #admin-sidenav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.10); border-radius: 2px; }
+#screen-admin #admin-sidenav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
 
 </style>
 </head>
@@ -2221,70 +2438,115 @@ p { line-height: 1.5; }
     <span class="topbar-title">Nova despesa</span>
     <span></span>
   </div>
-  <div class="scroll-content">
-    <div class="field">
-      <label>Tipo de despesa</label>
-      <div class="tipo-pills">
-        <span class="tipo-pill selected" onclick="selecionarTipo(this,'combustivel')">Combustível</span>
-        <span class="tipo-pill" onclick="selecionarTipo(this,'refeicao')">Refeição</span>
-        <span class="tipo-pill" onclick="selecionarTipo(this,'hotel')">Hotel</span>
-        <span class="tipo-pill" onclick="selecionarTipo(this,'pedagio')">Pedágio</span>
-        <span class="tipo-pill" onclick="selecionarTipo(this,'lavagem')">Lavagem</span>
-        <span class="tipo-pill" onclick="selecionarTipo(this,'outras')">Outras</span>
+  <div class="scroll-content" style="padding-bottom:24px;">
+
+    <!-- Mensagem de erro -->
+    <div id="desp-erro" class="erro-msg" style="margin:12px 16px 0;display:none;"></div>
+
+    <!-- Tipo de despesa -->
+    <div style="padding:16px 16px 0;">
+      <div class="section-label" style="margin-top:0;">Tipo de despesa</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:4px;">
+        <button class="desp-tipo-btn selected" data-tipo="combustivel" onclick="selecionarTipo(this,'combustivel')">
+          <span class="desp-tipo-icon">⛽</span>
+          <span>Combustível</span>
+        </button>
+        <button class="desp-tipo-btn" data-tipo="refeicao" onclick="selecionarTipo(this,'refeicao')">
+          <span class="desp-tipo-icon">🍽️</span>
+          <span>Refeição</span>
+        </button>
+        <button class="desp-tipo-btn" data-tipo="hotel" onclick="selecionarTipo(this,'hotel')">
+          <span class="desp-tipo-icon">🏨</span>
+          <span>Hotel</span>
+        </button>
+        <button class="desp-tipo-btn" data-tipo="pedagio" onclick="selecionarTipo(this,'pedagio')">
+          <span class="desp-tipo-icon">🛣️</span>
+          <span>Pedágio</span>
+        </button>
+        <button class="desp-tipo-btn" data-tipo="lavagem" onclick="selecionarTipo(this,'lavagem')">
+          <span class="desp-tipo-icon">🚿</span>
+          <span>Lavagem</span>
+        </button>
+        <button class="desp-tipo-btn" data-tipo="outras" onclick="selecionarTipo(this,'outras')">
+          <span class="desp-tipo-icon">📌</span>
+          <span>Outras</span>
+        </button>
       </div>
     </div>
 
-    <div class="field">
-      <label>Dia da semana</label>
-      <select id="desp-dia">
-        <option>Segunda-feira</option>
-        <option>Terça-feira</option>
-        <option>Quarta-feira</option>
-        <option>Quinta-feira</option>
-        <option>Sexta-feira</option>
-        <option>Sábado</option>
+    <!-- Dia da semana -->
+    <div style="padding:14px 16px 0;">
+      <label class="field-label">Dia da semana</label>
+      <select id="desp-dia" style="width:100%;padding:10px 12px;border-radius:var(--radius);border:1px solid var(--border);background:var(--surface2);font-size:14px;font-family:var(--font);color:var(--text);outline:none;-webkit-appearance:none;appearance:none;background-image:url('data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%2212%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%23888%22 stroke-width=%222%22><path d=%22M6 9l6 6 6-6%22/></svg>');background-repeat:no-repeat;background-position:right 12px center;">
+        <option value="0">Segunda-feira</option>
+        <option value="1">Terça-feira</option>
+        <option value="2">Quarta-feira</option>
+        <option value="3">Quinta-feira</option>
+        <option value="4">Sexta-feira</option>
+        <option value="5">Sábado</option>
       </select>
     </div>
 
-    <div class="field-row">
-      <div class="field">
-        <label>Valor (R$)</label>
-        <input type="number" step="0.01" placeholder="0,00" id="desp-valor">
-      </div>
-      <div class="field" id="litros-group">
-        <label>Litros</label>
-        <input type="number" step="0.01" placeholder="0,0" id="desp-litros">
-      </div>
-    </div>
-
-    <div class="field" id="odometro-group">
-      <label>Odômetro atual (km)</label>
-      <input type="number" placeholder="Ex: 8477" id="desp-odom">
-    </div>
-
-    <div id="media-preview" style="display:none; padding:12px 14px; background:var(--green-bg); border:1px solid var(--green-border); border-radius:var(--radius); margin-bottom:14px; font-size:13px; color:var(--green);">
-      Média calculada: <strong id="media-valor">—</strong>
-    </div>
-
-    <div class="field">
-      <label>Cupom / Comprovante</label>
-      <div class="upload-box" onclick="showToast('Upload de foto em breve!')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-          <rect x="3" y="6" width="18" height="14" rx="2"/>
-          <circle cx="12" cy="13" r="3"/>
-          <path d="M9 6l1-2h4l1 2"/>
-        </svg>
-        <p>Tirar foto ou escolher arquivo</p>
-        <span>JPG, PNG ou PDF · máx. 10 MB</span>
+    <!-- Valor -->
+    <div style="padding:14px 16px 0;">
+      <label class="field-label">Valor (R$) <span style="color:var(--red);">*</span></label>
+      <div style="position:relative;">
+        <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:14px;color:var(--text-3);font-weight:600;pointer-events:none;">R$</span>
+        <input type="number" inputmode="decimal" step="0.01" min="0" placeholder="0,00" id="desp-valor"
+          style="width:100%;padding:10px 12px 10px 36px;border-radius:var(--radius);border:1px solid var(--border);background:var(--surface2);font-size:16px;font-family:var(--mono);color:var(--text);outline:none;box-sizing:border-box;"
+          onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">
       </div>
     </div>
 
-    <div class="field">
-      <label>Observação (opcional)</label>
-      <textarea id="desp-obs" rows="2" placeholder="Ex: posto Shell BR-267" style="resize:none;"></textarea>
+    <!-- Campos de combustível (só aparecem quando tipo = combustível) -->
+    <div id="litros-group" style="padding:14px 16px 0;">
+      <label class="field-label">Quantidade de litros</label>
+      <div style="position:relative;">
+        <input type="number" inputmode="decimal" step="0.01" min="0" placeholder="0,00" id="desp-litros"
+          style="width:100%;padding:10px 44px 10px 12px;border-radius:var(--radius);border:1px solid var(--border);background:var(--surface2);font-size:16px;font-family:var(--mono);color:var(--text);outline:none;box-sizing:border-box;"
+          oninput="atualizarMediaPreview()"
+          onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">
+        <span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--text-3);pointer-events:none;">L</span>
+      </div>
     </div>
 
-    <button class="btn btn-success btn-full" onclick="salvarDespesa()">Salvar despesa</button>
+    <div id="odometro-group" style="padding:14px 16px 0;">
+      <label class="field-label">Odômetro atual (km) <span style="font-size:11px;color:var(--text-3);font-weight:400;">opcional</span></label>
+      <div style="position:relative;">
+        <input type="number" inputmode="numeric" placeholder="Ex: 84.750" id="desp-odom"
+          style="width:100%;padding:10px 52px 10px 12px;border-radius:var(--radius);border:1px solid var(--border);background:var(--surface2);font-size:16px;font-family:var(--mono);color:var(--text);outline:none;box-sizing:border-box;"
+          onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">
+        <span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:12px;color:var(--text-3);pointer-events:none;">km</span>
+      </div>
+    </div>
+
+    <!-- Preview de média km/l -->
+    <div id="media-preview" style="display:none;margin:12px 16px 0;padding:12px 14px;background:var(--green-bg);border:1px solid var(--green-border);border-radius:var(--radius);">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:16px;">📊</span>
+        <div>
+          <div style="font-size:11px;font-weight:600;color:var(--green);text-transform:uppercase;letter-spacing:0.04em;">Média estimada</div>
+          <div style="font-size:18px;font-weight:700;font-family:var(--mono);color:var(--green);" id="media-valor">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Observação -->
+    <div style="padding:14px 16px 0;">
+      <label class="field-label">Observação <span style="font-size:11px;color:var(--text-3);font-weight:400;">opcional</span></label>
+      <textarea id="desp-obs" rows="2" placeholder="Ex: Posto Shell BR-267, nota fiscal nº 1234…"
+        style="width:100%;padding:10px 12px;border-radius:var(--radius);border:1px solid var(--border);background:var(--surface2);font-size:14px;font-family:var(--font);color:var(--text);outline:none;resize:none;box-sizing:border-box;"
+        onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"></textarea>
+    </div>
+
+    <!-- Botão salvar -->
+    <div style="padding:20px 16px 0;">
+      <button id="btn-salvar-despesa" class="btn btn-success btn-full" onclick="salvarDespesa()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="margin-right:6px;vertical-align:-3px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        Salvar despesa
+      </button>
+    </div>
+
   </div>
 </div>
 
