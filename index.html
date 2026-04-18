@@ -394,8 +394,10 @@
   window.recalcTotalKm = function() {
     let total = 0;
     for (let i = 0; i < 6; i++) {
-      const el = document.getElementById('tot-' + i);
-      if (el) { const v = parseInt(el.textContent); if (!isNaN(v)) total += v; }
+      const ini = parseFloat(document.getElementById('ini-' + i)?.value) || 0;
+      const fin = parseFloat(document.getElementById('fin-' + i)?.value) || 0;
+      const diff = fin - ini;
+      if (diff > 0) total += diff;
     }
     const el = document.getElementById('km-total');
     if (el) el.textContent = fmtKm(total);
@@ -487,7 +489,7 @@
     document.getElementById('res-total').textContent  = fmt(totalGeral);
 
     if (id) {
-      await updateDoc(doc(db, 'semanas', id), { totalCombustivel, totalGeral, totalLitros });
+      await updateDoc(doc(db, 'semanas', id), { totalCombustivel, totalGeral, totalLitros, totalKm: km });
     }
   }
 
@@ -2599,6 +2601,12 @@ p { line-height: 1.5; }
         <circle cx="12" cy="12" r="8"/><path d="M9 12l2 2 4-4"/>
       </svg>
       Checklist
+    </div>
+    <div class="bnav-item" onclick="irParaRevisao()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/><path d="M5.5 5.5A7 7 0 0 1 19 12"/>
+      </svg>
+      Revisão
     </div>
   </div>
 </div>
