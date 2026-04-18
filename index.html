@@ -774,13 +774,17 @@
     const obs = document.getElementById('chk-obs')?.value || '';
     const mes = new Date().toISOString().slice(0, 7); // YYYY-MM
     const itens = [];
+    const itensMalfuncionamento = [];
     document.querySelectorAll('.check-item').forEach(item => {
       const label = item.querySelector('.check-item-label')?.textContent || '';
       const ok    = item.querySelector('.check-btn.ok');
       const nok   = item.querySelector('.check-btn.nok');
       const na    = item.querySelector('.check-btn.na');
-      itens.push({ label, status: ok ? 'C' : nok ? 'NC' : na ? 'NA' : 'pendente' });
+      const status = ok ? 'C' : nok ? 'NC' : na ? 'NA' : 'pendente';
+      itens.push({ label, status });
+      if (status === 'NC') itensMalfuncionamento.push(label);
     });
+    const temMalfuncionamento = itensMalfuncionamento.length > 0;
     try {
       await addDoc(collection(db, 'checklists'), {
         uid: u.uid,
@@ -788,10 +792,17 @@
         mes,
         itens,
         obs,
+        itensMalfuncionamento,
+        temMalfuncionamento,
+        statusAdmin: 'pendente',
         criadoEm: serverTimestamp()
       });
-      showToast('Checklist mensal enviado!');
-      setTimeout(() => navTo('screen-home'), 600);
+      if (temMalfuncionamento) {
+        showToast('⚠️ Checklist enviado — ' + itensMalfuncionamento.length + ' item(ns) NC!');
+      } else {
+        showToast('✅ Checklist mensal enviado!');
+      }
+      setTimeout(() => navTo('screen-home'), 900);
     } catch(e) {
       showToast('Erro ao salvar checklist.');
     }
@@ -810,13 +821,58 @@
     setLoading(true, 'Carregando painel…');
     try {
       // Carrega consultores e semanas em paralelo
-      const [snapUsuarios, snapSemanas] = await Promise.all([
+      const [snapUsuarios, snapSemanas, snapChecklists, snapRevisoes] = await Promise.all([
         getDocs(collection(db, 'usuarios')),
-        getDocs(query(collection(db, 'semanas'), orderBy('criadoEm', 'desc')))
+        getDocs(query(collection(db, 'semanas'), orderBy('criadoEm', 'desc'))),
+        getDocs(query(collection(db, 'checklists'), orderBy('criadoEm', 'desc'))),
+        getDocs(query(collection(db, 'revisoes'), orderBy('criadoEm', 'desc')))
       ]);
 
       window._adminState.consultores   = snapUsuarios.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => u.perfil !== 'admin');
       window._adminState.todasSemanas  = snapSemanas.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      // Alertas globais no painel
+      const checklistsNC  = snapChecklists.docs.map(d => d.data()).filter(c => c.temMalfuncionamento && c.statusAdmin === 'pendente');
+      const revisoesAtr   = snapRevisoes.docs.map(d => d.data()).filter(r => r.revisaoAtrasada && r.statusAdmin === 'pendente');
+
+      const alertPainelEl = document.getElementById('admin-painel-alertas-globais');
+      if (alertPainelEl) {
+        let alertasHtml = '';
+        if (checklistsNC.length > 0) {
+          alertasHtml += `<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--red-bg);border:1px solid var(--red-border);border-radius:var(--radius);margin-bottom:10px;cursor:pointer;" onclick="adminNavTo('checklists')">
+            <span style="font-size:20px;">⚠️</span>
+            <div>
+              <div style="font-weight:700;color:var(--red);font-size:14px;">${checklistsNC.length} checklist(s) com itens NC pendentes</div>
+              <div style="font-size:12px;color:var(--text-2);">Clique para analisar os checklists com mau funcionamento</div>
+            </div>
+          </div>`;
+        }
+        if (revisoesAtr.length > 0) {
+          alertasHtml += `<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--amber-bg);border:1px solid var(--amber-border);border-radius:var(--radius);margin-bottom:10px;cursor:pointer;" onclick="adminNavTo('revisoes')">
+            <span style="font-size:20px;">🔔</span>
+            <div>
+              <div style="font-weight:700;color:var(--amber);font-size:14px;">${revisoesAtr.length} revisão(ões) de veículo com atraso</div>
+              <div style="font-size:12px;color:var(--text-2);">Clique para ver as revisões atrasadas</div>
+            </div>
+          </div>`;
+        }
+        alertPainelEl.innerHTML   = alertasHtml;
+        alertPainelEl.style.display = alertasHtml ? '' : 'none';
+      }
+
+      // Atualiza badge nas abas do sidenav
+      const badgeChk = checklistsNC.length > 0 ? ` <span class="badge badge-red" style="margin-left:4px;font-size:10px;">${checklistsNC.length}</span>` : '';
+      const badgeRev = revisoesAtr.length > 0  ? ` <span class="badge badge-amber" style="margin-left:4px;font-size:10px;">${revisoesAtr.length}</span>` : '';
+      const sideChk = document.getElementById('admin-tab-checklists-side');
+      if (sideChk) {
+        const txtEl = sideChk.querySelector('.sidenav-item-text');
+        if (txtEl) txtEl.innerHTML = 'Checklists' + badgeChk;
+      }
+      const sideRev = document.getElementById('admin-tab-revisoes-side');
+      if (sideRev) {
+        const txtEl = sideRev.querySelector('.sidenav-item-text');
+        if (txtEl) txtEl.innerHTML = 'Revisões' + badgeRev;
+      }
 
       renderAdminPainel();
     } catch(e) {
@@ -1044,7 +1100,7 @@
 
   // ── ADMIN NAV ──────────────────────────────────────────────
   window.adminNavTo = function(aba) {
-    ['painel','consultores','historico','detalhes','usuarios'].forEach(a => {
+    ['painel','consultores','historico','detalhes','usuarios','checklists','revisoes'].forEach(a => {
       const el = document.getElementById('admin-panel-' + a);
       if (el) el.style.display = 'none';
     });
@@ -1060,8 +1116,10 @@
     if (sideEl) sideEl.classList.add('active');
     window._adminState.aba = aba;
 
-    if (aba === 'consultores') renderAdminConsultores();
-    if (aba === 'usuarios')    carregarUsuariosAdmin();
+    if (aba === 'consultores')  renderAdminConsultores();
+    if (aba === 'usuarios')     carregarUsuariosAdmin();
+    if (aba === 'checklists')   carregarChecklistsAdmin();
+    if (aba === 'revisoes')     carregarRevisoesAdmin();
   };
 
   window.toggleAdminSidebar = function() {
@@ -1159,6 +1217,238 @@
     await carregarPainelAdmin();
   };
 
+  // ═══════════════════════════════════════════════
+  // ADMIN — CHECKLISTS
+  // ═══════════════════════════════════════════════
+  window.carregarChecklistsAdmin = async function() {
+    const container = document.getElementById('admin-panel-checklists');
+    if (!container) return;
+    const listaEl = document.getElementById('admin-checklists-lista');
+    if (listaEl) listaEl.innerHTML = '<tr><td colspan="5" style="padding:16px;color:var(--text-2);font-size:13px;">Carregando...</td></tr>';
+
+    try {
+      const snap = await getDocs(query(collection(db, 'checklists'), orderBy('criadoEm', 'desc')));
+      const checklists = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      // KPIs
+      const total    = checklists.length;
+      const comNC    = checklists.filter(c => c.temMalfuncionamento).length;
+      const pendentes = checklists.filter(c => c.statusAdmin === 'pendente').length;
+
+      const setKpi = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+      setKpi('chk-kpi-total', total);
+      setKpi('chk-kpi-nc', comNC);
+      setKpi('chk-kpi-pendentes', pendentes);
+
+      // Alertas de malfuncionamento
+      const alertasEl = document.getElementById('admin-checklists-alertas');
+      const checklistsComNC = checklists.filter(c => c.temMalfuncionamento && c.statusAdmin === 'pendente');
+      if (alertasEl) {
+        if (checklistsComNC.length) {
+          alertasEl.style.display = '';
+          alertasEl.innerHTML = `
+            <div style="padding:14px 16px;background:var(--red-bg);border:1px solid var(--red-border);border-radius:var(--radius);margin-bottom:16px;">
+              <div style="font-weight:700;color:var(--red);font-size:14px;margin-bottom:8px;">⚠️ ${checklistsComNC.length} checklist(s) com mau funcionamento pendente de revisão</div>
+              ${checklistsComNC.map(c => `
+                <div style="font-size:13px;color:var(--text);padding:6px 0;border-bottom:1px solid var(--red-border);">
+                  <strong>${c.nomeConsultor}</strong> — ${c.mes} —
+                  Itens NC: <span style="color:var(--red);font-weight:600;">${(c.itensMalfuncionamento||[]).join(', ')}</span>
+                </div>
+              `).join('')}
+            </div>`;
+        } else {
+          alertasEl.style.display = 'none';
+        }
+      }
+
+      if (!listaEl) return;
+      if (!checklists.length) {
+        listaEl.innerHTML = '<tr><td colspan="5" style="padding:16px;color:var(--text-2);font-size:13px;">Nenhum checklist enviado.</td></tr>';
+        return;
+      }
+      listaEl.innerHTML = checklists.map(c => {
+        const data = c.criadoEm ? (c.criadoEm.toDate ? c.criadoEm.toDate() : new Date(c.criadoEm)).toLocaleDateString('pt-BR') : '—';
+        const ncCount  = (c.itensMalfuncionamento || []).length;
+        const ncBadge  = ncCount > 0
+          ? `<span class="badge badge-red">${ncCount} NC</span>`
+          : '<span class="badge badge-green">OK</span>';
+        const statusBadge = c.statusAdmin === 'visto'
+          ? '<span class="badge badge-green">Visto</span>'
+          : '<span class="badge badge-amber">Pendente</span>';
+        return `<tr class="admin-tr" onclick="verDetalhesChecklistAdmin('${c.id}')">
+          <td style="font-weight:500;">${c.nomeConsultor || '—'}</td>
+          <td>${c.mes || '—'}</td>
+          <td>${data}</td>
+          <td>${ncBadge}</td>
+          <td>${statusBadge}</td>
+        </tr>`;
+      }).join('');
+    } catch(e) {
+      console.error('[ChecklistsAdmin]', e);
+      if (listaEl) listaEl.innerHTML = '<tr><td colspan="5" style="padding:16px;color:var(--red);font-size:13px;">Erro ao carregar.</td></tr>';
+    }
+  };
+
+  window.verDetalhesChecklistAdmin = async function(id) {
+    try {
+      const snap = await getDoc(doc(db, 'checklists', id));
+      if (!snap.exists()) { showToast('Checklist não encontrado.'); return; }
+      const c = { id, ...snap.data() };
+
+      const modal = document.getElementById('modal-checklist-admin');
+      if (!modal) return;
+
+      document.getElementById('modal-chk-titulo').textContent   = (c.nomeConsultor || '—') + ' — ' + (c.mes || '');
+      document.getElementById('modal-chk-data').textContent     = c.criadoEm ? (c.criadoEm.toDate ? c.criadoEm.toDate() : new Date(c.criadoEm)).toLocaleDateString('pt-BR') : '—';
+      document.getElementById('modal-chk-obs').textContent      = c.obs || '—';
+      document.getElementById('modal-chk-status-btn').setAttribute('data-id', id);
+      document.getElementById('modal-chk-status-btn').textContent = c.statusAdmin === 'visto' ? '✓ Já visualizado' : 'Marcar como visto';
+      document.getElementById('modal-chk-status-btn').style.background = c.statusAdmin === 'visto' ? 'var(--green-bg)' : '';
+
+      const itensEl = document.getElementById('modal-chk-itens');
+      itensEl.innerHTML = (c.itens || []).map(item => {
+        const cor = item.status === 'C' ? 'var(--green)' : item.status === 'NC' ? 'var(--red)' : 'var(--amber)';
+        const bg  = item.status === 'C' ? 'var(--green-bg)' : item.status === 'NC' ? 'var(--red-bg)' : 'var(--amber-bg)';
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
+          <span style="font-size:13px;">${item.label}</span>
+          <span style="font-size:12px;font-weight:700;color:${cor};background:${bg};padding:2px 8px;border-radius:8px;">${item.status}</span>
+        </div>`;
+      }).join('');
+
+      modal.style.display = 'flex';
+    } catch(e) { showToast('Erro ao carregar detalhes.'); }
+  };
+
+  window.marcarChecklistVisto = async function(btn) {
+    const id = btn.getAttribute('data-id');
+    if (!id) return;
+    try {
+      await updateDoc(doc(db, 'checklists', id), { statusAdmin: 'visto' });
+      btn.textContent = '✓ Já visualizado';
+      btn.style.background = 'var(--green-bg)';
+      showToast('Checklist marcado como visto.');
+      await carregarChecklistsAdmin();
+    } catch(e) { showToast('Erro ao atualizar.'); }
+  };
+
+  window.fecharModalChecklistAdmin = function() {
+    const modal = document.getElementById('modal-checklist-admin');
+    if (modal) modal.style.display = 'none';
+  };
+
+  // ═══════════════════════════════════════════════
+  // ADMIN — REVISÕES
+  // ═══════════════════════════════════════════════
+  window.carregarRevisoesAdmin = async function() {
+    const listaEl = document.getElementById('admin-revisoes-lista');
+    if (listaEl) listaEl.innerHTML = '<tr><td colspan="6" style="padding:16px;color:var(--text-2);font-size:13px;">Carregando...</td></tr>';
+
+    try {
+      const snap = await getDocs(query(collection(db, 'revisoes'), orderBy('criadoEm', 'desc')));
+      const revisoes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      const total     = revisoes.length;
+      const atrasadas = revisoes.filter(r => r.revisaoAtrasada).length;
+      const pendentes = revisoes.filter(r => r.statusAdmin === 'pendente').length;
+
+      const setKpi = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+      setKpi('rev-kpi-total', total);
+      setKpi('rev-kpi-atrasadas', atrasadas);
+      setKpi('rev-kpi-pendentes', pendentes);
+
+      // Alertas de revisão atrasada
+      const alertasEl = document.getElementById('admin-revisoes-alertas');
+      const revsAtrasadas = revisoes.filter(r => r.revisaoAtrasada && r.statusAdmin === 'pendente');
+      if (alertasEl) {
+        if (revsAtrasadas.length) {
+          alertasEl.style.display = '';
+          alertasEl.innerHTML = `
+            <div style="padding:14px 16px;background:var(--amber-bg);border:1px solid var(--amber-border);border-radius:var(--radius);margin-bottom:16px;">
+              <div style="font-weight:700;color:var(--amber);font-size:14px;margin-bottom:8px;">🔔 ${revsAtrasadas.length} revisão(ões) registrada(s) com atraso</div>
+              ${revsAtrasadas.map(r => `
+                <div style="font-size:13px;color:var(--text);padding:6px 0;border-bottom:1px solid var(--amber-border);">
+                  <strong>${r.nomeConsultor}</strong> — ${r.data || '—'} — ${new Intl.NumberFormat('pt-BR').format(r.km)} km
+                  <span style="color:var(--amber);font-weight:600;"> (revisão atrasada)</span>
+                </div>
+              `).join('')}
+            </div>`;
+        } else {
+          alertasEl.style.display = 'none';
+        }
+      }
+
+      if (!listaEl) return;
+      if (!revisoes.length) {
+        listaEl.innerHTML = '<tr><td colspan="6" style="padding:16px;color:var(--text-2);font-size:13px;">Nenhuma revisão registrada.</td></tr>';
+        return;
+      }
+      listaEl.innerHTML = revisoes.map(r => {
+        const data = r.criadoEm ? (r.criadoEm.toDate ? r.criadoEm.toDate() : new Date(r.criadoEm)).toLocaleDateString('pt-BR') : '—';
+        const atrasadaBadge = r.revisaoAtrasada
+          ? '<span class="badge badge-amber">Atrasada</span>'
+          : '<span class="badge badge-green">Em dia</span>';
+        const statusBadge = r.statusAdmin === 'visto'
+          ? '<span class="badge badge-green">Visto</span>'
+          : '<span class="badge badge-amber">Pendente</span>';
+        return `<tr class="admin-tr" onclick="verDetalhesRevisaoAdmin('${r.id}')">
+          <td style="font-weight:500;">${r.nomeConsultor || '—'}</td>
+          <td>${r.data || '—'}</td>
+          <td class="mono">${new Intl.NumberFormat('pt-BR').format(r.km || 0)} km</td>
+          <td>${r.tipo || '—'}</td>
+          <td>${atrasadaBadge}</td>
+          <td>${statusBadge}</td>
+        </tr>`;
+      }).join('');
+    } catch(e) {
+      console.error('[RevisoesAdmin]', e);
+      if (listaEl) listaEl.innerHTML = '<tr><td colspan="6" style="padding:16px;color:var(--red);font-size:13px;">Erro ao carregar.</td></tr>';
+    }
+  };
+
+  window.verDetalhesRevisaoAdmin = async function(id) {
+    try {
+      const snap = await getDoc(doc(db, 'revisoes', id));
+      if (!snap.exists()) { showToast('Revisão não encontrada.'); return; }
+      const r = { id, ...snap.data() };
+
+      const modal = document.getElementById('modal-revisao-admin');
+      if (!modal) return;
+
+      document.getElementById('modal-rev-consultor').textContent = r.nomeConsultor || '—';
+      document.getElementById('modal-rev-data').textContent      = r.data || '—';
+      document.getElementById('modal-rev-km').textContent        = new Intl.NumberFormat('pt-BR').format(r.km || 0) + ' km';
+      document.getElementById('modal-rev-tipo').textContent      = r.tipo || '—';
+      document.getElementById('modal-rev-local').textContent     = r.local || '—';
+      document.getElementById('modal-rev-custo').textContent     = r.custo ? fmt(r.custo) : '—';
+
+      const alertaEl = document.getElementById('modal-rev-alerta');
+      if (alertaEl) {
+        alertaEl.style.display = r.revisaoAtrasada ? '' : 'none';
+      }
+
+      document.getElementById('modal-rev-status-btn').setAttribute('data-id', id);
+      document.getElementById('modal-rev-status-btn').textContent = r.statusAdmin === 'visto' ? '✓ Já visualizado' : 'Marcar como visto';
+
+      modal.style.display = 'flex';
+    } catch(e) { showToast('Erro ao carregar detalhes.'); }
+  };
+
+  window.marcarRevisaoVista = async function(btn) {
+    const id = btn.getAttribute('data-id');
+    if (!id) return;
+    try {
+      await updateDoc(doc(db, 'revisoes', id), { statusAdmin: 'visto' });
+      btn.textContent = '✓ Já visualizado';
+      showToast('Revisão marcada como vista.');
+      await carregarRevisoesAdmin();
+    } catch(e) { showToast('Erro ao atualizar.'); }
+  };
+
+  window.fecharModalRevisaoAdmin = function() {
+    const modal = document.getElementById('modal-revisao-admin');
+    if (modal) modal.style.display = 'none';
+  };
+
 
   // ═══════════════════════════════
   // REVISÃO DO VEÍCULO
@@ -1241,14 +1531,28 @@
 
     if (!km || !data) { showToast('Informe o KM e a data da revisão.'); return; }
 
+    // Detecta se revisão está atrasada
+    const kmAtual  = parseFloat(document.getElementById('rev-km-atual')?.value) || 0;
+    const kmUltima = parseFloat(document.getElementById('rev-km-ultima')?.value) || 0;
+    let intervalo  = window._revisaoIntervalo;
+    if (intervalo === 0) intervalo = parseFloat(document.getElementById('rev-intervalo-custom')?.value) || 0;
+    const proxima  = kmUltima + intervalo;
+    const revisaoAtrasada = kmAtual > 0 && intervalo > 0 && kmAtual >= proxima;
+
     try {
       await addDoc(collection(db, 'revisoes'), {
         uid: u.uid,
         nomeConsultor: u.nome,
         km, data, tipo, local, custo,
+        revisaoAtrasada,
+        statusAdmin: 'pendente',
         criadoEm: serverTimestamp()
       });
-      showToast('Revisão registrada!');
+      if (revisaoAtrasada) {
+        showToast('⚠️ Revisão registrada — veículo estava atrasado!');
+      } else {
+        showToast('✅ Revisão registrada!');
+      }
       document.getElementById('rev-form-registro').style.display = 'none';
       document.getElementById('rev-reg-km').value    = '';
       document.getElementById('rev-reg-data').value  = '';
@@ -3072,6 +3376,18 @@ p { line-height: 1.5; }
       </svg>
       <span class="sidenav-item-text">Usuários</span>
     </button>
+    <button class="admin-sidenav-item" id="admin-tab-checklists-side" onclick="adminNavTo('checklists')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <circle cx="12" cy="12" r="8"/><path d="M9 12l2 2 4-4"/>
+      </svg>
+      <span class="sidenav-item-text">Checklists</span>
+    </button>
+    <button class="admin-sidenav-item" id="admin-tab-revisoes-side" onclick="adminNavTo('revisoes')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/><path d="M5.5 5.5A7 7 0 0 1 19 12"/>
+      </svg>
+      <span class="sidenav-item-text">Revisões</span>
+    </button>
     <div class="admin-sidenav-divider"></div>
     <button class="admin-sidenav-item" onclick="fazerLogout()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
@@ -3092,6 +3408,9 @@ p { line-height: 1.5; }
           <p id="admin-label-mes" style="font-size:13px;color:var(--text-2);">Carregando...</p>
         </div>
       </div>
+
+      <!-- Alertas globais de mau funcionamento -->
+      <div id="admin-painel-alertas-globais" style="display:none;margin-bottom:20px;"></div>
 
       <!-- KPIs -->
       <div class="admin-kpis">
@@ -3319,6 +3638,102 @@ p { line-height: 1.5; }
       </div>
     </div>
 
+    <!-- ── CHECKLISTS ── -->
+    <div id="admin-panel-checklists" style="display:none;">
+      <div style="margin-bottom:20px;">
+        <h2 style="margin-bottom:2px;">Checklists</h2>
+        <p style="font-size:13px;color:var(--text-2);">Análise dos checklists mensais enviados pelos consultores.</p>
+      </div>
+      <div class="admin-kpis" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px;">
+        <div class="admin-kpi-card"><div class="admin-kpi-label">Total enviados</div><div class="admin-kpi-value" id="chk-kpi-total">—</div></div>
+        <div class="admin-kpi-card"><div class="admin-kpi-label" style="color:var(--red);">Com itens NC</div><div class="admin-kpi-value" id="chk-kpi-nc" style="color:var(--red);">—</div></div>
+        <div class="admin-kpi-card"><div class="admin-kpi-label">Pendentes</div><div class="admin-kpi-value" id="chk-kpi-pendentes" style="color:var(--amber);">—</div></div>
+      </div>
+      <div id="admin-checklists-alertas"></div>
+      <div class="section-label">Todos os checklists</div>
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Consultor</th>
+            <th>Mês</th>
+            <th>Data envio</th>
+            <th>Resultado</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="admin-checklists-lista">
+          <tr><td colspan="5" style="padding:16px;color:var(--text-2);font-size:13px;">Carregando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ── REVISÕES ── -->
+    <div id="admin-panel-revisoes" style="display:none;">
+      <div style="margin-bottom:20px;">
+        <h2 style="margin-bottom:2px;">Revisões de veículo</h2>
+        <p style="font-size:13px;color:var(--text-2);">Análise das revisões registradas pelos consultores.</p>
+      </div>
+      <div class="admin-kpis" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px;">
+        <div class="admin-kpi-card"><div class="admin-kpi-label">Total registradas</div><div class="admin-kpi-value" id="rev-kpi-total">—</div></div>
+        <div class="admin-kpi-card"><div class="admin-kpi-label" style="color:var(--amber);">Registradas com atraso</div><div class="admin-kpi-value" id="rev-kpi-atrasadas" style="color:var(--amber);">—</div></div>
+        <div class="admin-kpi-card"><div class="admin-kpi-label">Pendentes revisão</div><div class="admin-kpi-value" id="rev-kpi-pendentes" style="color:var(--blue);">—</div></div>
+      </div>
+      <div id="admin-revisoes-alertas"></div>
+      <div class="section-label">Todas as revisões</div>
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Consultor</th>
+            <th>Data revisão</th>
+            <th>KM</th>
+            <th>Tipo</th>
+            <th>Situação</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="admin-revisoes-lista">
+          <tr><td colspan="6" style="padding:16px;color:var(--text-2);font-size:13px;">Carregando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- MODAL DETALHES CHECKLIST ADMIN -->
+    <div id="modal-checklist-admin" style="display:none;position:fixed;inset:0;z-index:1100;background:rgba(0,0,0,0.55);backdrop-filter:blur(3px);align-items:center;justify-content:center;padding:24px;" onclick="if(event.target===this)fecharModalChecklistAdmin()">
+      <div style="background:var(--surface);border-radius:var(--radius-lg);padding:28px;max-width:500px;width:100%;box-shadow:var(--shadow-md);max-height:88vh;overflow-y:auto;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <h2 style="font-size:17px;" id="modal-chk-titulo">—</h2>
+          <button onclick="fecharModalChecklistAdmin()" style="background:none;border:none;cursor:pointer;color:var(--text-2);font-size:20px;padding:4px;border-radius:6px;">✕</button>
+        </div>
+        <p style="font-size:12px;color:var(--text-3);margin-bottom:16px;" id="modal-chk-data">—</p>
+        <div id="modal-chk-itens" style="margin-bottom:14px;"></div>
+        <div style="padding:10px 12px;background:var(--surface2);border-radius:var(--radius);margin-bottom:16px;">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-3);margin-bottom:4px;">Observações</div>
+          <div style="font-size:13px;color:var(--text);" id="modal-chk-obs">—</div>
+        </div>
+        <button id="modal-chk-status-btn" class="btn btn-success btn-full" onclick="marcarChecklistVisto(this)">Marcar como visto</button>
+      </div>
+    </div>
+
+    <!-- MODAL DETALHES REVISÃO ADMIN -->
+    <div id="modal-revisao-admin" style="display:none;position:fixed;inset:0;z-index:1100;background:rgba(0,0,0,0.55);backdrop-filter:blur(3px);align-items:center;justify-content:center;padding:24px;" onclick="if(event.target===this)fecharModalRevisaoAdmin()">
+      <div style="background:var(--surface);border-radius:var(--radius-lg);padding:28px;max-width:460px;width:100%;box-shadow:var(--shadow-md);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <h2 style="font-size:17px;">Detalhes da revisão</h2>
+          <button onclick="fecharModalRevisaoAdmin()" style="background:none;border:none;cursor:pointer;color:var(--text-2);font-size:20px;padding:4px;border-radius:6px;">✕</button>
+        </div>
+        <div id="modal-rev-alerta" style="display:none;padding:12px 14px;background:var(--amber-bg);border:1px solid var(--amber-border);border-radius:var(--radius);margin-bottom:16px;font-size:13px;font-weight:600;color:var(--amber);">
+          🔔 Esta revisão foi registrada com atraso — o veículo ultrapassou o limite de KM recomendado.
+        </div>
+        <div class="stat-row"><span class="stat-label">Consultor</span><span class="stat-value" id="modal-rev-consultor">—</span></div>
+        <div class="stat-row"><span class="stat-label">Data da revisão</span><span class="stat-value" id="modal-rev-data">—</span></div>
+        <div class="stat-row"><span class="stat-label">KM na revisão</span><span class="stat-value" id="modal-rev-km">—</span></div>
+        <div class="stat-row"><span class="stat-label">Tipo de serviço</span><span class="stat-value" id="modal-rev-tipo">—</span></div>
+        <div class="stat-row"><span class="stat-label">Oficina / Local</span><span class="stat-value" id="modal-rev-local">—</span></div>
+        <div class="stat-row" style="border-bottom:none;margin-bottom:16px;"><span class="stat-label">Custo</span><span class="stat-value" id="modal-rev-custo">—</span></div>
+        <button id="modal-rev-status-btn" class="btn btn-success btn-full" onclick="marcarRevisaoVista(this)">Marcar como visto</button>
+      </div>
+    </div>
+
   </div><!-- /admin-main-area -->
   </div><!-- /admin-body-wrap -->
 
@@ -3334,13 +3749,19 @@ p { line-height: 1.5; }
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
       </svg>
-      Consultores
+      Consult.
     </div>
-    <div class="bnav-item" onclick="adminNavTo('historico')">
+    <div class="bnav-item" onclick="adminNavTo('checklists')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-        <circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/>
+        <circle cx="12" cy="12" r="8"/><path d="M9 12l2 2 4-4"/>
       </svg>
-      Histórico
+      Checklist
+    </div>
+    <div class="bnav-item" onclick="adminNavTo('revisoes')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/><path d="M5.5 5.5A7 7 0 0 1 19 12"/>
+      </svg>
+      Revisões
     </div>
     <div class="bnav-item" onclick="adminNavTo('usuarios')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
