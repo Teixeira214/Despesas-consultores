@@ -1842,13 +1842,13 @@ p { line-height: 1.5; }
 #admin-topbar {
   display: flex; align-items: center; justify-content: space-between;
   padding: 0 32px;
-  background: #1e3a8a;
-  border-bottom: 2px solid rgba(255,255,255,0.10);
+  background: #000000;
+  border-bottom: 2px solid rgba(255,255,255,0.12);
   height: auto;
   min-height: 68px;
   flex-wrap: wrap;
   gap: 0;
-  box-shadow: 0 2px 16px rgba(30,58,138,0.35);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.25);
 }
 
 /* ── ADMIN HORIZONTAL NAV TABS ── */
@@ -1987,102 +1987,99 @@ p { line-height: 1.5; }
 .desp-item-del:hover { background: var(--red-bg); color: var(--red); }
 
 /* ══════════════════════════════════════════════════
-   ADMIN BLUE THEME
+   ADMIN DARK MODE — tela inteira fundo preto
    ══════════════════════════════════════════════════ */
 #screen-admin,
 #screen-admin * {
-  --bg:            #f0f5ff;
-  --surface:       #ffffff;
-  --surface2:      #e8effe;
-  --surface3:      #dce8fd;
-  --border:        rgba(37,99,235,0.12);
-  --border-strong: rgba(37,99,235,0.25);
-  --text:          #0f1f4b;
-  --text-2:        #3a5080;
-  --text-3:        #6b87b8;
-  --accent:        #2563eb;
-  --green:         #059669;
-  --green-bg:      rgba(5,150,105,0.08);
-  --green-border:  rgba(5,150,105,0.22);
-  --amber:         #d97706;
-  --amber-bg:      rgba(217,119,6,0.08);
-  --amber-border:  rgba(217,119,6,0.22);
-  --red:           #dc2626;
-  --red-bg:        rgba(220,38,38,0.08);
-  --red-border:    rgba(220,38,38,0.20);
-  --blue:          #2563eb;
-  --blue-bg:       rgba(37,99,235,0.10);
-  --blue-border:   rgba(37,99,235,0.25);
-  --shadow-sm:     0 1px 4px rgba(37,99,235,0.10), 0 0 0 1px rgba(37,99,235,0.06);
-  --shadow-md:     0 4px 16px rgba(37,99,235,0.14);
+  --bg:            #0a0a0a;
+  --surface:       #141414;
+  --surface2:      #1c1c1c;
+  --surface3:      #242424;
+  --border:        rgba(255,255,255,0.08);
+  --border-strong: rgba(255,255,255,0.16);
+  --text:          #f0f0f0;
+  --text-2:        #a0a0a0;
+  --text-3:        #606060;
+  --green:         #4ade80;
+  --green-bg:      rgba(74,222,128,0.10);
+  --green-border:  rgba(74,222,128,0.25);
+  --amber:         #fbbf24;
+  --amber-bg:      rgba(251,191,36,0.10);
+  --amber-border:  rgba(251,191,36,0.25);
+  --red:           #f87171;
+  --red-bg:        rgba(248,113,113,0.10);
+  --red-border:    rgba(248,113,113,0.25);
+  --blue:          #60a5fa;
+  --blue-bg:       rgba(96,165,250,0.12);
+  --blue-border:   rgba(96,165,250,0.25);
+  --shadow-sm:     0 1px 4px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.05);
+  --shadow-md:     0 4px 16px rgba(0,0,0,0.5);
 }
 
-#screen-admin { background: #f0f5ff; color: #0f1f4b; }
-#screen-admin #admin-main-area { background: #f0f5ff; color: #0f1f4b; }
-#screen-admin #admin-sidenav { background: #1e3a8a; border-right: 1px solid rgba(255,255,255,0.10); }
-#screen-admin .card { background: #fff; border-color: rgba(37,99,235,0.12); }
-#screen-admin .admin-table { background: #fff; border-color: rgba(37,99,235,0.12); }
-#screen-admin .admin-table th { background: #e8effe; color: #3a5080; border-color: rgba(37,99,235,0.12); }
-#screen-admin .admin-table td { border-color: rgba(37,99,235,0.08); color: #0f1f4b; }
-#screen-admin .admin-tr:hover td { background: #f0f5ff; }
-#screen-admin .admin-kpi-card { background: #fff; border-color: rgba(37,99,235,0.12); }
-#screen-admin .admin-kpi-label { color: #3a5080; }
-#screen-admin .admin-kpi-value { color: #0f1f4b; }
-#screen-admin .consultor-card { background: #fff; border-color: rgba(37,99,235,0.12); }
-#screen-admin .consultor-card:hover { border-color: #2563eb; box-shadow: 0 2px 12px rgba(37,99,235,0.15); }
-#screen-admin .mini-kpi { background: #e8effe; }
-#screen-admin .mini-kpi-label { color: #6b87b8; }
-#screen-admin .mini-kpi-value { color: #0f1f4b; }
-#screen-admin .section-label { color: #6b87b8; }
-#screen-admin h2, #screen-admin h3 { color: #0f1f4b; }
-#screen-admin p { color: #3a5080; }
-#screen-admin .field label { color: #3a5080; }
+#screen-admin { background: #0a0a0a; color: #f0f0f0; }
+#screen-admin #admin-main-area { background: #0a0a0a; color: #f0f0f0; }
+#screen-admin #admin-sidenav { background: #111111; border-right: 1px solid rgba(255,255,255,0.08); }
+#screen-admin .card { background: #141414; border-color: rgba(255,255,255,0.08); }
+#screen-admin .admin-table { background: #141414; border-color: rgba(255,255,255,0.08); }
+#screen-admin .admin-table th { background: #1c1c1c; color: #606060; border-color: rgba(255,255,255,0.08); }
+#screen-admin .admin-table td { border-color: rgba(255,255,255,0.06); color: #f0f0f0; }
+#screen-admin .admin-tr:hover td { background: #1c1c1c; }
+#screen-admin .admin-kpi-card { background: #141414; border-color: rgba(255,255,255,0.08); }
+#screen-admin .admin-kpi-label { color: #808080; }
+#screen-admin .admin-kpi-value { color: #f0f0f0; }
+#screen-admin .consultor-card { background: #141414; border-color: rgba(255,255,255,0.08); }
+#screen-admin .consultor-card:hover { border-color: rgba(255,255,255,0.3); box-shadow: 0 2px 12px rgba(0,0,0,0.5); }
+#screen-admin .mini-kpi { background: #1c1c1c; }
+#screen-admin .mini-kpi-label { color: #606060; }
+#screen-admin .mini-kpi-value { color: #f0f0f0; }
+#screen-admin .section-label { color: #606060; }
+#screen-admin h2, #screen-admin h3 { color: #f0f0f0; }
+#screen-admin p { color: #a0a0a0; }
+#screen-admin .field label { color: #808080; }
 #screen-admin .field input,
 #screen-admin .field select,
 #screen-admin .field textarea {
-  background: #e8effe;
-  border-color: rgba(37,99,235,0.18);
-  color: #0f1f4b;
+  background: #1c1c1c;
+  border-color: rgba(255,255,255,0.14);
+  color: #f0f0f0;
 }
 #screen-admin .field input:focus,
-#screen-admin .field select:focus { border-color: #2563eb; }
-#screen-admin .field select option { background: #fff; color: #0f1f4b; }
-#screen-admin .btn-secondary { background: #e8effe; color: #0f1f4b; border-color: rgba(37,99,235,0.18); }
-#screen-admin .btn-secondary:hover { background: #dce8fd; }
+#screen-admin .field select:focus { border-color: rgba(255,255,255,0.4); }
+#screen-admin .field select option { background: #1c1c1c; color: #f0f0f0; }
+#screen-admin .btn-secondary { background: #1c1c1c; color: #f0f0f0; border-color: rgba(255,255,255,0.14); }
+#screen-admin .btn-secondary:hover { background: #252525; }
+#screen-admin .admin-sidenav-item { color: #808080; }
+#screen-admin .admin-sidenav-item:hover { background: #1c1c1c; color: #f0f0f0; }
+#screen-admin .admin-sidenav-item.active { background: rgba(96,165,250,0.12); color: #60a5fa; }
+#screen-admin .sidenav-label { color: #505050; }
+#screen-admin .admin-sidenav-divider { background: rgba(255,255,255,0.07); }
+#screen-admin .week-item { border-color: rgba(255,255,255,0.07); }
+#screen-admin .week-item:hover { background: #1c1c1c; }
+#screen-admin .week-title { color: #f0f0f0; }
+#screen-admin .week-sub { color: #808080; }
+#screen-admin .stat-row { border-color: rgba(255,255,255,0.07); }
+#screen-admin .stat-label { color: #808080; }
+#screen-admin .card-row { border-color: rgba(255,255,255,0.07); }
+#screen-admin .bottom-nav { background: #111111; border-top: 1px solid rgba(255,255,255,0.08); }
+#screen-admin .topbar-back { color: #808080; }
+#screen-admin .topbar-back:hover { color: #f0f0f0; }
 
-/* Sidenav azul escuro com texto branco */
-#screen-admin .admin-sidenav-item { color: rgba(255,255,255,0.65); }
-#screen-admin .admin-sidenav-item:hover { background: rgba(255,255,255,0.10); color: #fff; }
-#screen-admin .admin-sidenav-item.active { background: rgba(255,255,255,0.18); color: #fff; font-weight: 600; }
-#screen-admin .sidenav-label { color: rgba(255,255,255,0.35); }
-#screen-admin .admin-sidenav-divider { background: rgba(255,255,255,0.10); }
+/* Badges dark */
+#screen-admin .badge-green { background: rgba(74,222,128,0.10); color: #4ade80; border-color: rgba(74,222,128,0.25); }
+#screen-admin .badge-amber { background: rgba(251,191,36,0.10); color: #fbbf24; border-color: rgba(251,191,36,0.25); }
+#screen-admin .badge-blue  { background: rgba(96,165,250,0.12); color: #60a5fa; border-color: rgba(96,165,250,0.25); }
+#screen-admin .badge-red   { background: rgba(248,113,113,0.10); color: #f87171; border-color: rgba(248,113,113,0.25); }
 
-#screen-admin .week-item { border-color: rgba(37,99,235,0.08); }
-#screen-admin .week-item:hover { background: #f0f5ff; }
-#screen-admin .week-title { color: #0f1f4b; }
-#screen-admin .week-sub { color: #3a5080; }
-#screen-admin .stat-row { border-color: rgba(37,99,235,0.08); }
-#screen-admin .stat-label { color: #3a5080; }
-#screen-admin .card-row { border-color: rgba(37,99,235,0.08); }
-#screen-admin .topbar-back { color: #3a5080; }
-#screen-admin .topbar-back:hover { color: #0f1f4b; }
+/* Botões de ação nas tabelas */
+#screen-admin .btn-aprovar { background: rgba(74,222,128,0.10); color: #4ade80; border-color: rgba(74,222,128,0.25); }
+#screen-admin .btn-devolver { background: rgba(248,113,113,0.10); color: #f87171; border-color: rgba(248,113,113,0.25); }
 
-/* Badges blue theme */
-#screen-admin .badge-green { background: rgba(5,150,105,0.08); color: #059669; border-color: rgba(5,150,105,0.22); }
-#screen-admin .badge-amber { background: rgba(217,119,6,0.08); color: #d97706; border-color: rgba(217,119,6,0.22); }
-#screen-admin .badge-blue  { background: rgba(37,99,235,0.10); color: #2563eb; border-color: rgba(37,99,235,0.25); }
-#screen-admin .badge-red   { background: rgba(220,38,38,0.08); color: #dc2626; border-color: rgba(220,38,38,0.20); }
-
-/* Botões de ação */
-#screen-admin .btn-aprovar { background: rgba(5,150,105,0.08); color: #059669; border-color: rgba(5,150,105,0.22); }
-#screen-admin .btn-devolver { background: rgba(220,38,38,0.08); color: #dc2626; border-color: rgba(220,38,38,0.20); }
-
-/* Scrollbar azul sutil */
+/* Scrollbar discreta */
 #screen-admin #admin-main-area::-webkit-scrollbar { width: 6px; }
 #screen-admin #admin-main-area::-webkit-scrollbar-track { background: transparent; }
-#screen-admin #admin-main-area::-webkit-scrollbar-thumb { background: rgba(37,99,235,0.20); border-radius: 3px; }
+#screen-admin #admin-main-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
 #screen-admin #admin-sidenav::-webkit-scrollbar { width: 4px; }
-#screen-admin #admin-sidenav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+#screen-admin #admin-sidenav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.10); border-radius: 2px; }
 
 </style>
 </head>
