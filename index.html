@@ -219,6 +219,9 @@
   // ═══════════════════════════════
   // HOME CONSULTOR
   // ═══════════════════════════════
+  // Mês selecionado para navegação (0 = mês atual, -1 = anterior, etc.)
+  window._mesOffset = 0;
+
   async function carregarHomeConsultor() {
     const u = window._appState.usuario;
     document.getElementById('home-nome').textContent   = u.nome;
@@ -276,11 +279,15 @@
 
   function calcularMetricasMes() {
     const semanas = window._appState.semanas;
-    const mes = new Date().getMonth();
+    const agora = new Date();
+    const mesSel = new Date(agora.getFullYear(), agora.getMonth() + window._mesOffset, 1);
+    const mes = mesSel.getMonth();
+    const ano = mesSel.getFullYear();
+
     const semesMes = semanas.filter(s => {
       if (!s.criadoEm) return true;
       const d = s.criadoEm.toDate ? s.criadoEm.toDate() : new Date(s.criadoEm);
-      return d.getMonth() === mes;
+      return d.getMonth() === mes && d.getFullYear() === ano;
     });
     const km    = semesMes.reduce((a, s) => a + (s.totalKm || 0), 0);
     const comb  = semesMes.reduce((a, s) => a + (s.totalCombustivel || 0), 0);
@@ -293,9 +300,22 @@
     document.getElementById('met-comb').textContent  = fmt(comb);
     document.getElementById('met-total').textContent = fmt(total);
 
-    const nomeMes = new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+    const nomeMes = mesSel.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
     document.getElementById('label-mes').textContent = nomeMes.charAt(0).toUpperCase() + nomeMes.slice(1);
+
+    // Atualiza estado dos botões de navegação
+    const btnPrev = document.getElementById('btn-mes-prev');
+    const btnNext = document.getElementById('btn-mes-next');
+    if (btnNext) {
+      btnNext.disabled = window._mesOffset >= 0;
+      btnNext.style.opacity = window._mesOffset >= 0 ? '0.35' : '1';
+    }
   }
+
+  window.navegarMes = function(delta) {
+    window._mesOffset += delta;
+    calcularMetricasMes();
+  };
 
   // ═══════════════════════════════
   // SEMANA — ABRIR / CRIAR
@@ -320,6 +340,15 @@
     const dom = new Date(seg);  dom.setDate(seg.getDate() + 6);
     const fmt2 = d => d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit' });
     const titulo = `${fmt2(seg)} a ${fmt2(dom)}/${dom.getFullYear()}`;
+
+    // ── Verifica duplicata pelo título ──────────────────────
+    const semanasDuplicadas = window._appState.semanas.filter(s => s.titulo === titulo);
+    if (semanasDuplicadas.length > 0) {
+      showToast('⚠️ Já existe uma semana com este período!');
+      // Abre a semana existente em vez de criar nova
+      await abrirSemana(semanasDuplicadas[0].id);
+      return;
+    }
 
     setLoading(true, 'Criando semana…');
     try {
@@ -347,6 +376,43 @@
     document.getElementById('semana-titulo').textContent = semana.titulo || 'Semana';
     document.getElementById('semana-badge').className = 'badge ' + badgeStatus(semana.status);
     document.getElementById('semana-badge').textContent = semana.status || 'Rascunho';
+
+    // ── Modo somente leitura para semanas não-rascunho ──────
+    const isReadOnly = semana.status && semana.status !== 'Rascunho' && semana.status !== 'Devolvido';
+    window._semanaReadOnly = isReadOnly;
+
+    // Aviso de somente leitura
+    const roMsg = document.getElementById('semana-readonly-msg');
+    if (roMsg) {
+      roMsg.style.display = isReadOnly ? '' : 'none';
+      const statusMsg = semana.status === 'Aprovado'
+        ? '✅ Esta semana foi <strong>aprovada</strong>. Apenas leitura.'
+        : semana.status === 'Enviado'
+        ? '🔒 Esta semana foi <strong>enviada para aprovação</strong>. Não é possível editar até ser devolvida ou aprovada.'
+        : '';
+      roMsg.innerHTML = statusMsg;
+    }
+
+    // Desabilita ou habilita campos de KM
+    for (let i = 0; i < 6; i++) {
+      const dest = document.getElementById(`dest-${i}`);
+      const ini  = document.getElementById(`ini-${i}`);
+      const fin  = document.getElementById(`fin-${i}`);
+      if (dest) dest.readOnly = isReadOnly;
+      if (ini)  ini.readOnly  = isReadOnly;
+      if (fin)  fin.readOnly  = isReadOnly;
+      if (dest) dest.style.opacity = isReadOnly ? '0.65' : '1';
+      if (ini)  ini.style.opacity  = isReadOnly ? '0.65' : '1';
+      if (fin)  fin.style.opacity  = isReadOnly ? '0.65' : '1';
+    }
+
+    // Oculta/exibe botões de ação
+    const btnSalvar  = document.getElementById('semana-btn-salvar');
+    const btnEnviar  = document.getElementById('semana-btn-enviar');
+    const btnAddDesp = document.getElementById('semana-btn-add-desp');
+    if (btnSalvar)  btnSalvar.style.display  = isReadOnly ? 'none' : '';
+    if (btnEnviar)  btnEnviar.style.display  = isReadOnly ? 'none' : '';
+    if (btnAddDesp) btnAddDesp.style.display = isReadOnly ? 'none' : '';
 
     const dias = semana.diasKm || [];
     for (let i = 0; i < 6; i++) {
@@ -407,6 +473,10 @@
   window.salvarKm = async function() {
     const id = window._appState.semanaAtual;
     if (!id) return;
+    if (window._semanaReadOnly) {
+      showToast('🔒 Semana em somente leitura.');
+      return;
+    }
     const diasKm = [];
     let totalKm = 0;
     for (let i = 0; i < 6; i++) {
@@ -487,6 +557,10 @@
   window.irParaDespesa = function() {
     if (!window._appState.semanaAtual) {
       showToast('Abra ou crie uma semana primeiro.');
+      return;
+    }
+    if (window._semanaReadOnly) {
+      showToast('🔒 Semana em somente leitura. Não é possível adicionar despesas.');
       return;
     }
     // Reset tipo para combustível
@@ -591,6 +665,10 @@
 
   // Exclui despesa e atualiza resumo
   window.excluirDespesa = async function(despId) {
+    if (window._semanaReadOnly) {
+      showToast('🔒 Semana em somente leitura.');
+      return;
+    }
     if (!confirm('Excluir esta despesa?')) return;
     try {
       await deleteDoc(doc(db, 'despesas', despId));
@@ -685,7 +763,7 @@
           </div>
           <div class="desp-item-right">
             <span class="desp-item-valor">${fmt(d.valor)}</span>
-            <button class="desp-item-del" onclick="excluirDespesa('${d.id}')" title="Excluir">✕</button>
+            ${window._semanaReadOnly ? '' : `<button class="desp-item-del" onclick="excluirDespesa('${d.id}')" title="Excluir">✕</button>`}
           </div>
         </div>`;
     }).join('');
@@ -748,6 +826,10 @@
   window.enviarSemana = async function() {
     const id = window._appState.semanaAtual;
     if (!id) return;
+    if (window._semanaReadOnly) {
+      showToast('🔒 Esta semana já foi enviada ou aprovada.');
+      return;
+    }
     await updateDoc(doc(db, 'semanas', id), { status: 'Enviado' });
     document.getElementById('semana-badge').className = 'badge badge-blue';
     document.getElementById('semana-badge').textContent = 'Enviado';
@@ -2469,8 +2551,12 @@ p { line-height: 1.5; }
         Sair
       </button>
     </div>
-    <!-- Label mês -->
-    <p id="label-mes" style="font-size:11px;font-weight:600;letter-spacing:0.07em;text-transform:uppercase;color:rgba(255,255,255,0.5);margin-bottom:10px;">Mês atual</p>
+    <!-- Label mês com navegação -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;">
+      <button id="btn-mes-prev" onclick="navegarMes(-1)" style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.22);color:#fff;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:18px;line-height:1;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:300;" title="Mês anterior">‹</button>
+      <p id="label-mes" style="font-size:11px;font-weight:600;letter-spacing:0.07em;text-transform:uppercase;color:rgba(255,255,255,0.8);text-align:center;flex:1;margin:0;">Mês atual</p>
+      <button id="btn-mes-next" onclick="navegarMes(1)" disabled style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.22);color:#fff;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:18px;line-height:1;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:300;opacity:0.35;" title="Próximo mês">›</button>
+    </div>
     <!-- KPI cards no navy -->
     <div class="metrics-grid" style="margin-bottom:0;">
       <div style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);border-radius:var(--radius-lg);padding:14px;">
@@ -2543,6 +2629,8 @@ p { line-height: 1.5; }
     <span class="badge badge-amber" id="semana-badge">Rascunho</span>
   </div>
   <div class="scroll-content">
+    <!-- Banner somente leitura -->
+    <div id="semana-readonly-msg" style="display:none;margin-bottom:12px;padding:12px 14px;background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:var(--radius);font-size:13px;color:var(--blue);font-weight:500;line-height:1.5;"></div>
     <div class="section-label">Percurso em KM</div>
     <div class="card">
       <div class="card-body" style="padding:0;">
@@ -2679,7 +2767,7 @@ p { line-height: 1.5; }
       <div id="lista-despesas">
         <div class="card-row"><span style="font-size:13px;color:var(--text-2);">Nenhuma despesa adicionada.</span></div>
       </div>
-      <div class="card-row" style="cursor:pointer;" onclick="irParaDespesa()">
+      <div id="semana-btn-add-desp" class="card-row" style="cursor:pointer;" onclick="irParaDespesa()">
         <span style="font-size:13px;color:var(--blue);font-weight:500;">+ Adicionar despesa</span>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
       </div>
@@ -2697,8 +2785,8 @@ p { line-height: 1.5; }
       </div>
     </div>
 
-    <button class="btn btn-secondary btn-full" onclick="salvarRascunho()">Salvar rascunho</button>
-    <button class="btn btn-success btn-full" onclick="enviarSemana()">Enviar para aprovação</button>
+    <button id="semana-btn-salvar" class="btn btn-secondary btn-full" onclick="salvarRascunho()">Salvar rascunho</button>
+    <button id="semana-btn-enviar" class="btn btn-success btn-full" onclick="enviarSemana()">Enviar para aprovação</button>
   </div>
   <div class="bottom-nav">
     <div class="bnav-item" onclick="navTo('screen-home')">
